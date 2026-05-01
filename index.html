@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Wayfinder v0.10.0 — events, expanded destinations, travel date -->
+<!-- Wayfinder v0.11.0 — theme parks, water parks, zoos, aquariums, museums, family resorts -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -376,6 +376,52 @@
     color: var(--rust);
     font-weight: 700;
   }
+
+  .attraction-card {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(179, 71, 39, 0.06);
+    border-left: 3px solid var(--rust);
+    margin-bottom: 8px;
+  }
+  .attraction-icon {
+    font-size: 24px;
+    flex-shrink: 0;
+    width: 40px;
+    text-align: center;
+    line-height: 1;
+    padding-top: 2px;
+  }
+  .attraction-text { flex: 1; min-width: 0; }
+  .attraction-name {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.25;
+    margin-bottom: 3px;
+  }
+  .attraction-name a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--ink);
+  }
+  .attraction-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+    margin-bottom: 2px;
+  }
+  .attraction-blurb {
+    font-size: 12px;
+    font-style: italic;
+    line-height: 1.4;
+    opacity: 0.85;
+    margin-top: 3px;
+  }
+  .attraction-card .pick-links { margin-top: 6px; }
   .day-section {
     margin-top: 14px; padding-top: 10px; border-top: 2px solid var(--ink);
   }
@@ -581,6 +627,7 @@
       <label class="check-pill on"><input type="checkbox" value="lodging" checked />Lodging</label>
       <label class="check-pill"><input type="checkbox" value="historic" />Historic Sites</label>
       <label class="check-pill"><input type="checkbox" value="brewery" />Breweries</label>
+      <label class="check-pill on"><input type="checkbox" value="attractions" checked />Theme Parks &amp; Family</label>
       <label class="check-pill on"><input type="checkbox" value="events" checked />Events &amp; Concerts</label>
       <label class="check-pill on"><input type="checkbox" value="wikipedia" checked />Wikipedia Context</label>
       <label class="check-pill on"><input type="checkbox" value="reddit" checked />Reddit Tips</label>
@@ -1575,6 +1622,203 @@ async function fetchBreweries(routeGeometry) {
   });
 }
 
+// Curated list of major US attractions that work as standalone trip destinations
+// or major day-stop anchors. Includes theme parks, water parks, family resorts,
+// zoos, aquariums, and major museums. Used both for the "Theme Parks & Family"
+// pill (matched along route) and as Inspire Me destinations when distance fits.
+const CURATED_ATTRACTIONS = [
+  // Disney
+  { name: 'Walt Disney World', coord: [28.3852, -81.5639], category: 'theme_park', city: 'Orlando, FL', website: 'https://disneyworld.disney.go.com/', blurb: 'Four parks, two water parks, dining, resorts' },
+  { name: 'Disneyland', coord: [33.8121, -117.9190], category: 'theme_park', city: 'Anaheim, CA', website: 'https://disneyland.disney.go.com/', blurb: 'Original Disney park & California Adventure' },
+
+  // Universal
+  { name: 'Universal Orlando Resort', coord: [28.4734, -81.4677], category: 'theme_park', city: 'Orlando, FL', website: 'https://www.universalorlando.com/', blurb: 'Universal Studios + Islands of Adventure + Volcano Bay' },
+  { name: 'Universal Studios Hollywood', coord: [34.1381, -118.3534], category: 'theme_park', city: 'Universal City, CA', website: 'https://www.universalstudioshollywood.com/', blurb: 'Movie-studio theme park with Studio Tour' },
+
+  // Six Flags
+  { name: 'Six Flags Magic Mountain', coord: [34.4248, -118.5961], category: 'theme_park', city: 'Valencia, CA', website: 'https://www.sixflags.com/magicmountain', blurb: 'Coaster capital of the world' },
+  { name: 'Six Flags Great Adventure', coord: [40.1383, -74.4408], category: 'theme_park', city: 'Jackson, NJ', website: 'https://www.sixflags.com/greatadventure', blurb: 'Kingda Ka & safari drive-through' },
+  { name: 'Six Flags Over Texas', coord: [32.7559, -97.0703], category: 'theme_park', city: 'Arlington, TX', website: 'https://www.sixflags.com/overtexas', blurb: 'Original Six Flags park' },
+  { name: 'Six Flags Fiesta Texas', coord: [29.5982, -98.6092], category: 'theme_park', city: 'San Antonio, TX', website: 'https://www.sixflags.com/fiestatexas', blurb: 'Limestone-quarry coasters' },
+  { name: 'Six Flags Great America', coord: [42.3700, -87.9360], category: 'theme_park', city: 'Gurnee, IL', website: 'https://www.sixflags.com/greatamerica', blurb: 'Chicago-area thrill park' },
+  { name: 'Six Flags Over Georgia', coord: [33.7706, -84.5517], category: 'theme_park', city: 'Austell, GA', website: 'https://www.sixflags.com/overgeorgia', blurb: 'Atlanta-area coaster park' },
+  { name: 'Six Flags St. Louis', coord: [38.5128, -90.6786], category: 'theme_park', city: 'Eureka, MO', website: 'https://www.sixflags.com/stlouis', blurb: 'Wooden coaster classics' },
+  { name: 'Six Flags New England', coord: [42.0376, -72.6151], category: 'theme_park', city: 'Agawam, MA', website: 'https://www.sixflags.com/newengland', blurb: 'Superman: The Ride' },
+
+  // Cedar Fair
+  { name: 'Cedar Point', coord: [41.4823, -82.6839], category: 'theme_park', city: 'Sandusky, OH', website: 'https://www.cedarpoint.com/', blurb: 'Roller coaster capital of the world' },
+  { name: 'Knott\'s Berry Farm', coord: [33.8442, -117.9981], category: 'theme_park', city: 'Buena Park, CA', website: 'https://www.knotts.com/', blurb: 'Original Boysenberry Festival home' },
+  { name: 'Kings Island', coord: [39.3447, -84.2683], category: 'theme_park', city: 'Mason, OH', website: 'https://www.visitkingsisland.com/', blurb: 'Beast & Diamondback country' },
+  { name: 'Kings Dominion', coord: [37.8408, -77.4458], category: 'theme_park', city: 'Doswell, VA', website: 'https://www.kingsdominion.com/', blurb: 'Eiffel Tower & Twisted Timbers' },
+  { name: 'Carowinds', coord: [35.1042, -80.9436], category: 'theme_park', city: 'Charlotte, NC', website: 'https://www.carowinds.com/', blurb: 'Fury 325 giga coaster' },
+  { name: 'Canada\'s Wonderland', coord: [43.8428, -79.5392], category: 'theme_park', city: 'Vaughan, ON', website: 'https://www.canadaswonderland.com/', blurb: 'Largest park in Canada' },
+  { name: 'Worlds of Fun', coord: [39.1769, -94.4878], category: 'theme_park', city: 'Kansas City, MO', website: 'https://www.worldsoffun.com/', blurb: 'Mamba & Prowler woodies' },
+  { name: 'Valleyfair', coord: [44.7980, -93.4448], category: 'theme_park', city: 'Shakopee, MN', website: 'https://www.valleyfair.com/', blurb: 'Twin Cities coaster park' },
+
+  // Sea World / Busch
+  { name: 'SeaWorld Orlando', coord: [28.4112, -81.4612], category: 'theme_park', city: 'Orlando, FL', website: 'https://seaworld.com/orlando/', blurb: 'Marine life & coasters' },
+  { name: 'SeaWorld San Antonio', coord: [29.4583, -98.7000], category: 'theme_park', city: 'San Antonio, TX', website: 'https://seaworld.com/san-antonio/', blurb: 'Texan SeaWorld park' },
+  { name: 'SeaWorld San Diego', coord: [32.7635, -117.2270], category: 'theme_park', city: 'San Diego, CA', website: 'https://seaworld.com/san-diego/', blurb: 'Original SeaWorld' },
+  { name: 'Busch Gardens Tampa Bay', coord: [28.0367, -82.4192], category: 'theme_park', city: 'Tampa, FL', website: 'https://buschgardens.com/tampa/', blurb: 'African-themed thrill park & zoo' },
+  { name: 'Busch Gardens Williamsburg', coord: [37.2331, -76.6473], category: 'theme_park', city: 'Williamsburg, VA', website: 'https://buschgardens.com/williamsburg/', blurb: 'European-themed coasters' },
+
+  // Independent / Regional theme parks
+  { name: 'Hersheypark', coord: [40.2876, -76.6585], category: 'theme_park', city: 'Hershey, PA', website: 'https://www.hersheypark.com/', blurb: 'Chocolate-themed park & ZooAmerica' },
+  { name: 'Dollywood', coord: [35.7951, -83.5302], category: 'theme_park', city: 'Pigeon Forge, TN', website: 'https://www.dollywood.com/', blurb: 'Smoky Mtn music & coasters' },
+  { name: 'Silver Dollar City', coord: [36.6677, -93.3387], category: 'theme_park', city: 'Branson, MO', website: 'https://www.silverdollarcity.com/', blurb: 'Ozark-themed park with Time Traveler' },
+  { name: 'Holiday World', coord: [38.1167, -86.9081], category: 'theme_park', city: 'Santa Claus, IN', website: 'https://www.holidayworld.com/', blurb: 'Free drinks, free sunscreen, top wooden coasters' },
+  { name: 'Kennywood', coord: [40.3911, -79.8634], category: 'theme_park', city: 'West Mifflin, PA', website: 'https://www.kennywood.com/', blurb: 'Historic Pittsburgh-area park' },
+  { name: 'Lagoon', coord: [40.9854, -111.8961], category: 'theme_park', city: 'Farmington, UT', website: 'https://www.lagoonpark.com/', blurb: 'Utah\'s independent thrill park' },
+  { name: 'Knoebels', coord: [40.8775, -76.5817], category: 'theme_park', city: 'Elysburg, PA', website: 'https://www.knoebels.com/', blurb: 'Free-admission classic American park' },
+
+  // Water parks
+  { name: 'Schlitterbahn New Braunfels', coord: [29.7110, -98.1234], category: 'water_park', city: 'New Braunfels, TX', website: 'https://www.schlitterbahn.com/new-braunfels', blurb: 'Largest water park in the US' },
+  { name: 'Schlitterbahn Galveston', coord: [29.2832, -94.8167], category: 'water_park', city: 'Galveston, TX', website: 'https://www.schlitterbahn.com/galveston', blurb: 'Indoor/outdoor seaside water park' },
+  { name: 'Noah\'s Ark Waterpark', coord: [43.6294, -89.7872], category: 'water_park', city: 'Wisconsin Dells, WI', website: 'https://www.noahsarkwaterpark.com/', blurb: 'America\'s largest waterpark by area' },
+  { name: 'Wet \'n\' Wild Las Vegas', coord: [36.0316, -115.2811], category: 'water_park', city: 'Las Vegas, NV', website: 'https://www.wetnwildlasvegas.com/', blurb: 'Desert oasis water park' },
+  { name: 'Volcano Bay', coord: [28.4694, -81.4773], category: 'water_park', city: 'Orlando, FL', website: 'https://www.universalorlando.com/web/en/us/theme-parks/volcano-bay', blurb: 'Universal\'s tropical water park' },
+  { name: 'Typhoon Lagoon', coord: [28.3653, -81.5275], category: 'water_park', city: 'Lake Buena Vista, FL', website: 'https://disneyworld.disney.go.com/destinations/typhoon-lagoon/', blurb: 'Disney World water park' },
+  { name: 'Blizzard Beach', coord: [28.3559, -81.5775], category: 'water_park', city: 'Lake Buena Vista, FL', website: 'https://disneyworld.disney.go.com/destinations/blizzard-beach/', blurb: 'Ski-resort-themed Disney water park' },
+  { name: 'Aquatica Orlando', coord: [28.4118, -81.4530], category: 'water_park', city: 'Orlando, FL', website: 'https://aquatica.com/orlando/', blurb: 'SeaWorld\'s water park' },
+  { name: 'Six Flags Hurricane Harbor Arlington', coord: [32.7546, -97.0658], category: 'water_park', city: 'Arlington, TX', website: 'https://www.sixflags.com/hurricaneharbortexas', blurb: 'Six Flags water park' },
+  { name: 'Splash Mountain Magic Mountain', coord: [34.4256, -118.5947], category: 'water_park', city: 'Valencia, CA', website: 'https://www.sixflags.com/hurricaneharborla', blurb: 'Six Flags LA water park' },
+  { name: 'Camelbeach', coord: [41.0496, -75.3681], category: 'water_park', city: 'Tannersville, PA', website: 'https://www.camelbeach.com/', blurb: 'Pocono Mtn water park' },
+
+  // Great Wolf Lodge (resort water parks)
+  { name: 'Great Wolf Lodge Grapevine', coord: [32.9357, -97.0561], category: 'family_resort', city: 'Grapevine, TX', website: 'https://www.greatwolf.com/grapevine', blurb: 'Indoor water park resort' },
+  { name: 'Great Wolf Lodge Wisconsin Dells', coord: [43.6125, -89.7765], category: 'family_resort', city: 'Wisconsin Dells, WI', website: 'https://www.greatwolf.com/wisconsin-dells', blurb: 'Original Great Wolf Lodge' },
+  { name: 'Great Wolf Lodge Garden Grove', coord: [33.7720, -117.9476], category: 'family_resort', city: 'Garden Grove, CA', website: 'https://www.greatwolf.com/southern-california', blurb: 'Near Disneyland' },
+  { name: 'Great Wolf Lodge Williamsburg', coord: [37.2256, -76.7320], category: 'family_resort', city: 'Williamsburg, VA', website: 'https://www.greatwolf.com/williamsburg', blurb: 'Indoor water park near Busch Gardens' },
+  { name: 'Great Wolf Lodge Mason', coord: [39.3580, -84.3010], category: 'family_resort', city: 'Mason, OH', website: 'https://www.greatwolf.com/mason', blurb: 'Near Kings Island' },
+  { name: 'Great Wolf Lodge Pocono Mountains', coord: [41.0594, -75.4076], category: 'family_resort', city: 'Scotrun, PA', website: 'https://www.greatwolf.com/poconos', blurb: 'NY/Philly metro indoor water park' },
+  { name: 'Kalahari Resorts Wisconsin Dells', coord: [43.6189, -89.7680], category: 'family_resort', city: 'Wisconsin Dells, WI', website: 'https://www.kalahariresorts.com/wisconsin', blurb: 'Africa-themed resort & water park' },
+  { name: 'Kalahari Resorts Sandusky', coord: [41.4244, -82.6878], category: 'family_resort', city: 'Sandusky, OH', website: 'https://www.kalahariresorts.com/ohio', blurb: 'Near Cedar Point' },
+  { name: 'Kalahari Resorts Pocono Mountains', coord: [41.1031, -75.4108], category: 'family_resort', city: 'Pocono Manor, PA', website: 'https://www.kalahariresorts.com/pennsylvania', blurb: 'Massive PA indoor water park' },
+  { name: 'Kalahari Resorts Round Rock', coord: [30.5083, -97.6728], category: 'family_resort', city: 'Round Rock, TX', website: 'https://www.kalahariresorts.com/texas', blurb: 'Texas indoor water park resort' },
+
+  // Top zoos
+  { name: 'San Diego Zoo', coord: [32.7353, -117.1490], category: 'zoo', city: 'San Diego, CA', website: 'https://zoo.sandiegozoo.org/', blurb: 'Iconic conservation-focused zoo' },
+  { name: 'San Diego Zoo Safari Park', coord: [33.0962, -116.9986], category: 'zoo', city: 'Escondido, CA', website: 'https://sdzsafaripark.org/', blurb: 'Drive/tram-through African savanna' },
+  { name: 'Bronx Zoo', coord: [40.8506, -73.8770], category: 'zoo', city: 'Bronx, NY', website: 'https://bronxzoo.com/', blurb: 'Largest US metro zoo' },
+  { name: 'St. Louis Zoo', coord: [38.6353, -90.2920], category: 'zoo', city: 'St. Louis, MO', website: 'https://www.stlzoo.org/', blurb: 'Free admission, world-class' },
+  { name: 'Lincoln Park Zoo', coord: [41.9203, -87.6336], category: 'zoo', city: 'Chicago, IL', website: 'https://www.lpzoo.org/', blurb: 'Free Chicago lakefront zoo' },
+  { name: 'Henry Doorly Zoo', coord: [41.2270, -95.9303], category: 'zoo', city: 'Omaha, NE', website: 'https://www.omahazoo.com/', blurb: 'Top-rated, dome rainforest & desert' },
+  { name: 'Cincinnati Zoo', coord: [39.1432, -84.5085], category: 'zoo', city: 'Cincinnati, OH', website: 'https://cincinnatizoo.org/', blurb: 'Fiona the hippo\'s home' },
+  { name: 'Memphis Zoo', coord: [35.1494, -89.9964], category: 'zoo', city: 'Memphis, TN', website: 'https://www.memphiszoo.org/', blurb: 'Pandas & teaching gardens' },
+
+  // Top aquariums
+  { name: 'Georgia Aquarium', coord: [33.7634, -84.3951], category: 'aquarium', city: 'Atlanta, GA', website: 'https://www.georgiaaquarium.org/', blurb: 'Largest US aquarium, whale sharks' },
+  { name: 'Monterey Bay Aquarium', coord: [36.6182, -121.9019], category: 'aquarium', city: 'Monterey, CA', website: 'https://www.montereybayaquarium.org/', blurb: 'Kelp forest & sea otters' },
+  { name: 'Shedd Aquarium', coord: [41.8676, -87.6140], category: 'aquarium', city: 'Chicago, IL', website: 'https://www.sheddaquarium.org/', blurb: 'Lakefront aquarium with belugas' },
+  { name: 'New England Aquarium', coord: [42.3592, -71.0500], category: 'aquarium', city: 'Boston, MA', website: 'https://www.neaq.org/', blurb: 'Giant ocean tank & penguins' },
+  { name: 'Tennessee Aquarium', coord: [35.0556, -85.3110], category: 'aquarium', city: 'Chattanooga, TN', website: 'https://www.tnaqua.org/', blurb: 'River and ocean journey buildings' },
+  { name: 'Texas State Aquarium', coord: [27.8166, -97.3905], category: 'aquarium', city: 'Corpus Christi, TX', website: 'https://www.texasstateaquarium.org/', blurb: 'Gulf of Mexico marine life' },
+
+  // Major museums (the kind people drive to)
+  { name: 'Smithsonian National Mall', coord: [38.8893, -77.0234], category: 'museum', city: 'Washington, DC', website: 'https://www.si.edu/', blurb: '17 free museums in one place' },
+  { name: 'Field Museum', coord: [41.8663, -87.6170], category: 'museum', city: 'Chicago, IL', website: 'https://www.fieldmuseum.org/', blurb: 'Sue the T. rex & global anthropology' },
+  { name: 'American Museum of Natural History', coord: [40.7813, -73.9740], category: 'museum', city: 'New York, NY', website: 'https://www.amnh.org/', blurb: 'Dinosaurs, planetarium, dioramas' },
+  { name: 'The Met', coord: [40.7794, -73.9632], category: 'museum', city: 'New York, NY', website: 'https://www.metmuseum.org/', blurb: 'Massive art collection across millennia' },
+  { name: 'Museum of Science and Industry', coord: [41.7906, -87.5831], category: 'museum', city: 'Chicago, IL', website: 'https://www.msichicago.org/', blurb: 'Coal mine, U-505 sub, hands-on' },
+  { name: 'California Academy of Sciences', coord: [37.7699, -122.4661], category: 'museum', city: 'San Francisco, CA', website: 'https://www.calacademy.org/', blurb: 'Aquarium + planetarium + rainforest under one living roof' },
+  { name: 'Exploratorium', coord: [37.8017, -122.3978], category: 'museum', city: 'San Francisco, CA', website: 'https://www.exploratorium.edu/', blurb: 'Hands-on science on Pier 15' },
+  { name: 'Kennedy Space Center', coord: [28.5729, -80.6490], category: 'museum', city: 'Merritt Island, FL', website: 'https://www.kennedyspacecenter.com/', blurb: 'Saturn V hall & launch viewing' },
+  { name: 'Space Center Houston', coord: [29.5519, -95.0975], category: 'museum', city: 'Houston, TX', website: 'https://spacecenter.org/', blurb: 'NASA Johnson tour & Mission Control' },
+  { name: 'Henry Ford Museum', coord: [42.3026, -83.2347], category: 'museum', city: 'Dearborn, MI', website: 'https://www.thehenryford.org/', blurb: 'Greenfield Village & American innovation' },
+  { name: 'Field of Dreams Movie Site', coord: [42.4708, -90.7250], category: 'museum', city: 'Dyersville, IA', website: 'https://www.fieldofdreamsmoviesite.com/', blurb: '"If you build it, he will come"' },
+  { name: 'Crystal Bridges Museum of American Art', coord: [36.3833, -94.2049], category: 'museum', city: 'Bentonville, AR', website: 'https://crystalbridges.org/', blurb: 'Free admission, Walmart-funded American art' },
+
+  // Iconic family attractions that don't fit neatly elsewhere
+  { name: 'LEGOLAND California', coord: [33.1281, -117.3105], category: 'theme_park', city: 'Carlsbad, CA', website: 'https://www.legoland.com/california/', blurb: 'Lego-themed park for ages 2-12' },
+  { name: 'LEGOLAND Florida', coord: [27.9888, -81.6883], category: 'theme_park', city: 'Winter Haven, FL', website: 'https://www.legoland.com/florida/', blurb: 'Florida Lego park & water park' },
+  { name: 'Wisconsin Dells Mt. Olympus', coord: [43.6209, -89.7836], category: 'theme_park', city: 'Wisconsin Dells, WI', website: 'https://www.mtolympuspark.com/', blurb: 'Theme + water park combo' }
+];
+
+// Fetch curated attractions whose route-distance is within range. Combined with
+// OSM amusement_park, theme_park, water_park, zoo, aquarium tags as supplements.
+async function fetchAttractions(routeGeometry) {
+  const coords = routeGeometry.coordinates;
+  if (!coords.length) return [];
+
+  // 1. Curated list — match by distance to route
+  const curated = CURATED_ATTRACTIONS.map(a => {
+    let minDist = Infinity;
+    // Sample every 30th coord for speed
+    for (let i = 0; i < coords.length; i += 30) {
+      const d = distMiles([coords[i][1], coords[i][0]], a.coord);
+      if (d < minDist) minDist = d;
+    }
+    return { ...a, _routeDist: minDist, source: 'curated' };
+  }).filter(a => a._routeDist < 40);
+
+  // 2. OSM supplement — query along route
+  const samples = [];
+  const sampleCount = Math.min(6, Math.max(2, Math.floor(coords.length / 80)));
+  for (let i = 1; i <= sampleCount; i++) {
+    const idx = Math.floor((coords.length / (sampleCount + 1)) * i);
+    samples.push(coords[idx]);
+  }
+  const radius = 25000;
+  const tagQueries = [
+    'node["tourism"="theme_park"]',
+    'node["leisure"="water_park"]',
+    'node["tourism"="zoo"]',
+    'node["tourism"="aquarium"]',
+    'node["tourism"="museum"]["name"]'  // require name to filter junk
+  ];
+  const queryParts = [];
+  tagQueries.forEach(q => samples.forEach(s => {
+    queryParts.push(`${q}(around:${radius},${s[1]},${s[0]});`);
+  }));
+  const overpassQuery = `[out:json][timeout:25];(${queryParts.join('')});out center 80;`;
+
+  let osmAttractions = [];
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: 'data=' + encodeURIComponent(overpassQuery)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      const curatedNames = new Set(CURATED_ATTRACTIONS.map(a => a.name.toLowerCase()));
+      osmAttractions = (data.elements || [])
+        .filter(el => el.tags?.name)
+        .filter(el => !curatedNames.has(el.tags.name.toLowerCase())) // dedupe vs curated
+        .map(el => {
+          const lat = el.lat || el.center?.lat;
+          const lon = el.lon || el.center?.lon;
+          if (!lat || !lon) return null;
+          let category = 'attraction';
+          if (el.tags.tourism === 'theme_park') category = 'theme_park';
+          else if (el.tags.leisure === 'water_park') category = 'water_park';
+          else if (el.tags.tourism === 'zoo') category = 'zoo';
+          else if (el.tags.tourism === 'aquarium') category = 'aquarium';
+          else if (el.tags.tourism === 'museum') category = 'museum';
+
+          // Distance to route
+          let minDist = Infinity;
+          for (let i = 0; i < coords.length; i += 30) {
+            const d = distMiles([coords[i][1], coords[i][0]], [lat, lon]);
+            if (d < minDist) minDist = d;
+          }
+          return {
+            name: el.tags.name,
+            coord: [lat, lon],
+            category,
+            city: el.tags['addr:city'] || '',
+            website: el.tags.website || el.tags['contact:website'] || '',
+            blurb: '',
+            _routeDist: minDist,
+            source: 'osm'
+          };
+        })
+        .filter(Boolean)
+        .filter(a => a._routeDist < 30);
+    }
+  } catch (e) { /* OSM failures are OK — we still have curated */ }
+
+  return [...curated, ...osmAttractions];
+}
+
 async function fetchPOIsAlongRoute(routeGeometry, interests) {
   const coords = routeGeometry.coordinates;
   if (!coords.length) return [];
@@ -2025,7 +2269,7 @@ async function planTrip() {
     setLoading('Querying archives', 'NPS, Recreation.gov, Reddit, OpenStreetMap');
     const stateCodes = await statesAlongRoute(validStops, route.geometry);
 
-    const [npsParks, recGov, redditByStop, redditStatePark, osmPois, fsqData, breweries, wikiNearby] = await Promise.all([
+    const [npsParks, recGov, redditByStop, redditStatePark, osmPois, fsqData, breweries, wikiNearby, attractions] = await Promise.all([
       interests.includes('national_park') ? fetchNPSParks(stateCodes) : Promise.resolve([]),
       interests.includes('campground') ? fetchRecGovCampgrounds(route.geometry) : Promise.resolve([]),
       interests.includes('reddit') ? fetchRedditTips(validStops) : Promise.resolve({}),
@@ -2033,7 +2277,8 @@ async function planTrip() {
       fetchPOIsAlongRoute(route.geometry, interests),
       fetchFoursquare(route.geometry, interests),
       interests.includes('brewery') ? fetchBreweries(route.geometry) : Promise.resolve([]),
-      interests.includes('wikipedia') ? fetchWikiAlongRoute(route.geometry) : Promise.resolve([])
+      interests.includes('wikipedia') ? fetchWikiAlongRoute(route.geometry) : Promise.resolve([]),
+      interests.includes('attractions') ? fetchAttractions(route.geometry) : Promise.resolve([])
     ]);
 
     // Ticketmaster events are fetched separately because they need dayPlan to exist
@@ -2138,7 +2383,20 @@ async function planTrip() {
         .filter(p => p._d < 40)
         .sort((a, b) => (b.rating || 0) - (a.rating || 0) || a._d - b._d);
 
-      const picks = { parks: npsForDay, camps: campsForDay, food: [], scenic: [], lodge: [], historic: [], breweries: [], wiki: [] };
+      const picks = { parks: npsForDay, camps: campsForDay, food: [], scenic: [], lodge: [], historic: [], breweries: [], wiki: [], attractions: [] };
+
+      // Theme parks, water parks, zoos, aquariums, museums for this day
+      const attrsForDay = (attractions || [])
+        .map(a => ({ ...a, _d: distToDay(a.coord[0], a.coord[1]) }))
+        .filter(a => a._d < 35)
+        .sort((a, b) => {
+          // Prefer curated entries when distance is comparable
+          if (a.source === 'curated' && b.source !== 'curated' && Math.abs(a._d - b._d) < 10) return -1;
+          if (b.source === 'curated' && a.source !== 'curated' && Math.abs(a._d - b._d) < 10) return 1;
+          return a._d - b._d;
+        })
+        .slice(0, 5);
+      picks.attractions = attrsForDay;
 
       // Breweries for this day (sorted by distance to day stops)
       const brewsForDay = (breweries || [])
@@ -2268,6 +2526,17 @@ async function planTrip() {
         `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
       d.picks.breweries?.forEach(b => placeMarker(b.lat, b.lon, '🍺', '#8a3319',
         `<b>${esc(b.name)}</b><br/>${esc(b.type || 'Brewery')}<br/>${b.website ? `<a href="${esc(b.website)}" target="_blank" rel="noopener">Website →</a>` : ''}`));
+      d.picks.attractions?.forEach(a => {
+        const ICONS = { theme_park: '🎢', water_park: '🌊', zoo: '🦁', aquarium: '🐠', museum: '🏛', family_resort: '🐺', attraction: '🎡' };
+        const LABELS = { theme_park: 'Theme park', water_park: 'Water park', zoo: 'Zoo', aquarium: 'Aquarium', museum: 'Museum', family_resort: 'Family resort', attraction: 'Attraction' };
+        const icon = ICONS[a.category] || '🎡';
+        const label = LABELS[a.category] || 'Attraction';
+        const popup = `<b>${esc(a.name)}</b><br/>
+          <span style="font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;opacity:0.7;">${esc(label)}${a.city ? ' · ' + esc(a.city) : ''}</span>
+          ${a.blurb ? `<br/><i>${esc(a.blurb)}</i>` : ''}
+          ${a.website ? `<br/><a href="${esc(a.website)}" target="_blank" rel="noopener">Website →</a>` : ''}`;
+        placeMarker(a.coord[0], a.coord[1], icon, '#b34727', popup);
+      });
       d.picks.wiki?.forEach(w => placeMarker(w.lat, w.lon, 'W', '#5b7a8c',
         `<b>${esc(w.name)}</b><br/><a href="${esc(w.url)}" target="_blank" rel="noopener">Read on Wikipedia →</a>`));
       d.events?.forEach(e => {
@@ -2379,6 +2648,36 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
             <div class="pick-links">
               <a class="pick-link" href="${esc(c.url)}" target="_blank" rel="noopener">Reserve</a>
               <a class="pick-link reddit" href="${redditSearchURL(c.name)}" target="_blank" rel="noopener">Reddit</a>
+            </div>
+          </div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
+    // Theme parks, water parks, zoos, aquariums, museums, family resorts
+    if (day.picks.attractions?.length) {
+      body += `<div class="day-section"><div class="day-section-label">Theme Parks &amp; Family</div>`;
+      const ICONS = { theme_park: '🎢', water_park: '🌊', zoo: '🦁', aquarium: '🐠', museum: '🏛', family_resort: '🐺', attraction: '🎡' };
+      const LABELS = { theme_park: 'Theme park', water_park: 'Water park', zoo: 'Zoo', aquarium: 'Aquarium', museum: 'Museum', family_resort: 'Family resort', attraction: 'Attraction' };
+      day.picks.attractions.forEach(a => {
+        const icon = ICONS[a.category] || '🎡';
+        const label = LABELS[a.category] || 'Attraction';
+        const cityStr = a.city ? ` · ${esc(a.city)}` : '';
+        const distStr = a._d ? ` · ${a._d.toFixed(0)} mi off route` : '';
+        const blurb = a.blurb ? `<div class="attraction-blurb">${esc(a.blurb)}</div>` : '';
+        const websiteLink = a.website
+          ? `<a class="pick-link" href="${esc(a.website)}" target="_blank" rel="noopener" style="border-color:var(--rust);color:var(--rust);">Website</a>` : '';
+        body += `<div class="attraction-card">
+          <div class="attraction-icon">${icon}</div>
+          <div class="attraction-text">
+            <div class="attraction-name">${a.website ? `<a href="${esc(a.website)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : esc(a.name)}</div>
+            <div class="attraction-meta">${esc(label)}${cityStr}${distStr}</div>
+            ${blurb}
+            <div class="pick-links">
+              ${websiteLink}
+              <a class="pick-link reddit" href="${redditSearchURL(a.name)}" target="_blank" rel="noopener">Reddit</a>
+              <a class="pick-link tripadv" href="${tripAdvisorSearchURL(a.name)}" target="_blank" rel="noopener">TripAdvisor</a>
             </div>
           </div>
         </div>`;
@@ -2498,7 +2797,7 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
       body += `</div>`;
     }
 
-    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !foodLodgeCount && !day.picks.breweries?.length && !day.picks.wiki?.length && !day.stopWikis?.length && !day.events?.length && !day.redditTips?.length) {
+    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !foodLodgeCount && !day.picks.breweries?.length && !day.picks.attractions?.length && !day.picks.wiki?.length && !day.stopWikis?.length && !day.events?.length && !day.redditTips?.length) {
       body += `<div style="font-style:italic;opacity:0.55;font-size:13px;padding:10px 0;">No specific picks for this stretch — try widening your interests, or add API keys for better park data.</div>`;
     }
 
@@ -2729,7 +3028,19 @@ const INSPIRE_DESTINATIONS = [
   { name: 'Estes Park, Colorado', coord: [40.3772, -105.5217], blurb: 'Rocky Mountain NP doorstep' },
   { name: 'Durango, Colorado', coord: [37.2753, -107.8801], blurb: 'Narrow-gauge railroad & San Juan peaks' },
   { name: 'Williamsburg, Virginia', coord: [37.2707, -76.7075], blurb: 'Living-history colonial town' },
-  { name: 'Newport, Rhode Island', coord: [41.4901, -71.3128], blurb: 'Gilded Age mansions & Cliff Walk' }
+  { name: 'Newport, Rhode Island', coord: [41.4901, -71.3128], blurb: 'Gilded Age mansions & Cliff Walk' },
+
+  // Theme park / family attraction destinations
+  { name: 'Orlando, Florida', coord: [28.5383, -81.3792], blurb: 'Disney World, Universal, and SeaWorld basecamp' },
+  { name: 'Wisconsin Dells, Wisconsin', coord: [43.6275, -89.7710], blurb: 'Waterpark capital + Mt. Olympus + Noah\'s Ark' },
+  { name: 'Sandusky, Ohio', coord: [41.4490, -82.7080], blurb: 'Cedar Point + Kalahari water park' },
+  { name: 'Pigeon Forge, Tennessee', coord: [35.7884, -83.5543], blurb: 'Dollywood + Smoky Mountains gateway' },
+  { name: 'Branson, Missouri', coord: [36.6437, -93.2185], blurb: 'Silver Dollar City + live shows + Ozark lakes' },
+  { name: 'Hershey, Pennsylvania', coord: [40.2876, -76.6585], blurb: 'Hersheypark + Chocolate World' },
+  { name: 'Williamsburg, Virginia', coord: [37.2707, -76.7075], blurb: 'Living-history town + Busch Gardens + Great Wolf' },
+  { name: 'Anaheim, California', coord: [33.8366, -117.9143], blurb: 'Disneyland + Knott\'s Berry Farm' },
+  { name: 'Arlington, Texas', coord: [32.7357, -97.1081], blurb: 'Six Flags Over Texas + Hurricane Harbor' },
+  { name: 'Santa Claus, Indiana', coord: [38.1167, -86.9081], blurb: 'Holiday World + Splashin\' Safari' }
 ];
 
 async function inspireMe() {
