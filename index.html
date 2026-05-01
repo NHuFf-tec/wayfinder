@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Wayfinder v0.9.0 — hard pushback on infeasible plans, food/lodging map-only -->
+<!-- Wayfinder v0.10.0 — events, expanded destinations, travel date -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -326,6 +326,56 @@
     margin-left: 4px;
     letter-spacing: 0.1em;
   }
+
+  .event-card {
+    display: flex;
+    gap: 10px;
+    padding: 10px 12px;
+    background: rgba(91, 122, 140, 0.06);
+    border-left: 3px solid var(--sky);
+    margin-bottom: 8px;
+  }
+  .event-thumb {
+    width: 64px;
+    height: 64px;
+    flex-shrink: 0;
+    background-size: cover;
+    background-position: center;
+    background-color: rgba(91, 122, 140, 0.2);
+  }
+  .event-text {
+    flex: 1;
+    min-width: 0;
+  }
+  .event-name {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 14px;
+    line-height: 1.25;
+    margin-bottom: 3px;
+  }
+  .event-name a {
+    color: var(--ink);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--ink);
+  }
+  .event-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    opacity: 0.7;
+    margin-bottom: 2px;
+  }
+  .event-venue {
+    font-size: 12px;
+    line-height: 1.4;
+    opacity: 0.85;
+  }
+  .event-time {
+    color: var(--rust);
+    font-weight: 700;
+  }
   .day-section {
     margin-top: 14px; padding-top: 10px; border-top: 2px solid var(--ink);
   }
@@ -510,6 +560,10 @@
         </select>
       </div>
     </div>
+    <div class="control-block" style="margin-bottom:14px;">
+      <label>Travel Start Date <span style="opacity:0.5;text-transform:none;letter-spacing:0;font-family:'Fraunces',serif;font-style:italic;font-size:11px;">(optional — for events lookup)</span></label>
+      <input type="date" id="startDate" />
+    </div>
     <label class="check-pill" id="roundTripPill" style="margin-bottom:10px;display:inline-flex;">
       <input type="checkbox" id="roundTrip" />Round Trip — return to start
     </label>
@@ -527,6 +581,7 @@
       <label class="check-pill on"><input type="checkbox" value="lodging" checked />Lodging</label>
       <label class="check-pill"><input type="checkbox" value="historic" />Historic Sites</label>
       <label class="check-pill"><input type="checkbox" value="brewery" />Breweries</label>
+      <label class="check-pill on"><input type="checkbox" value="events" checked />Events &amp; Concerts</label>
       <label class="check-pill on"><input type="checkbox" value="wikipedia" checked />Wikipedia Context</label>
       <label class="check-pill on"><input type="checkbox" value="reddit" checked />Reddit Tips</label>
     </div>
@@ -597,6 +652,12 @@
       <a href="https://foursquare.com/developers/signup" target="_blank" class="key-link">Get a free Foursquare key →</a>
       <input type="password" id="fsqKey" placeholder="Paste your Foursquare Service API key here" />
     </div>
+    <div class="key-block">
+      <div class="key-name">Ticketmaster Discovery <span style="background:var(--sky);color:var(--cream);font-family:'DM Mono',monospace;font-size:9px;padding:2px 6px;letter-spacing:0.14em;text-transform:uppercase;margin-left:6px;">Concerts &amp; events</span></div>
+      <div class="key-desc">Surfaces concerts, sports, theater, comedy, and festivals along your route within your travel dates. Free tier: 5,000 calls/day. Set Travel Start Date in trip settings to use.</div>
+      <a href="https://developer-acct.ticketmaster.com/user/register" target="_blank" class="key-link">Get a free Ticketmaster key →</a>
+      <input type="password" id="tmKey" placeholder="Paste your Ticketmaster Consumer Key here" />
+    </div>
     <div class="modal-actions">
       <button class="modal-btn" id="clearKeys">Clear</button>
       <button class="modal-btn primary" id="saveKeys">Save Keys</button>
@@ -618,20 +679,22 @@ const KEYS = {
   nps: localStorage.getItem('wf_nps_key') || '',
   ridb: localStorage.getItem('wf_ridb_key') || '',
   ors: localStorage.getItem('wf_ors_key') || '',
-  fsq: localStorage.getItem('wf_fsq_key') || ''
+  fsq: localStorage.getItem('wf_fsq_key') || '',
+  tm: localStorage.getItem('wf_tm_key') || ''
 };
 
 const keysBtn = document.getElementById('keysBtn');
 const keysModal = document.getElementById('keysModal');
 
 function refreshKeysBadge() {
-  keysBtn.classList.toggle('configured', !!(KEYS.nps || KEYS.ridb || KEYS.ors || KEYS.fsq));
+  keysBtn.classList.toggle('configured', !!(KEYS.nps || KEYS.ridb || KEYS.ors || KEYS.fsq || KEYS.tm));
 }
 keysBtn.addEventListener('click', () => {
   document.getElementById('npsKey').value = KEYS.nps;
   document.getElementById('ridbKey').value = KEYS.ridb;
   document.getElementById('orsKey').value = KEYS.ors;
   document.getElementById('fsqKey').value = KEYS.fsq;
+  document.getElementById('tmKey').value = KEYS.tm;
   keysModal.classList.add('show');
 });
 document.getElementById('saveKeys').addEventListener('click', () => {
@@ -639,10 +702,12 @@ document.getElementById('saveKeys').addEventListener('click', () => {
   KEYS.ridb = document.getElementById('ridbKey').value.trim();
   KEYS.ors = document.getElementById('orsKey').value.trim();
   KEYS.fsq = document.getElementById('fsqKey').value.trim();
+  KEYS.tm = document.getElementById('tmKey').value.trim();
   localStorage.setItem('wf_nps_key', KEYS.nps);
   localStorage.setItem('wf_ridb_key', KEYS.ridb);
   localStorage.setItem('wf_ors_key', KEYS.ors);
   localStorage.setItem('wf_fsq_key', KEYS.fsq);
+  localStorage.setItem('wf_tm_key', KEYS.tm);
   refreshKeysBadge();
   keysModal.classList.remove('show');
 });
@@ -651,11 +716,13 @@ document.getElementById('clearKeys').addEventListener('click', () => {
   document.getElementById('ridbKey').value = '';
   document.getElementById('orsKey').value = '';
   document.getElementById('fsqKey').value = '';
-  KEYS.nps = ''; KEYS.ridb = ''; KEYS.ors = ''; KEYS.fsq = '';
+  document.getElementById('tmKey').value = '';
+  KEYS.nps = ''; KEYS.ridb = ''; KEYS.ors = ''; KEYS.fsq = ''; KEYS.tm = '';
   localStorage.removeItem('wf_nps_key');
   localStorage.removeItem('wf_ridb_key');
   localStorage.removeItem('wf_ors_key');
   localStorage.removeItem('wf_fsq_key');
+  localStorage.removeItem('wf_tm_key');
   refreshKeysBadge();
 });
 keysModal.addEventListener('click', e => {
@@ -1308,6 +1375,78 @@ async function fetchFoursquare(routeGeometry, interests) {
   return { food: dedupe(food), lodge: dedupe(lodge) };
 }
 
+/* ============ TICKETMASTER EVENTS ============ */
+// Searches Ticketmaster Discovery API for events within a date window near each
+// day's stops. Returns events grouped by approximate location.
+async function fetchTicketmasterEvents(dayPlan, startDate) {
+  if (!KEYS.tm || !startDate) return {};
+
+  const eventsByDay = {};
+  const start = new Date(startDate + 'T00:00:00');
+
+  for (let dayIdx = 0; dayIdx < dayPlan.length; dayIdx++) {
+    const day = dayPlan[dayIdx];
+    const dayDate = new Date(start);
+    dayDate.setDate(start.getDate() + dayIdx);
+    const nextDate = new Date(dayDate);
+    nextDate.setDate(nextDate.getDate() + 1);
+
+    // Format as ISO 8601 with Z suffix for UTC, what TM expects
+    const startStr = dayDate.toISOString().split('.')[0] + 'Z';
+    const endStr = nextDate.toISOString().split('.')[0] + 'Z';
+
+    // Query: events in the bounding region of this day's stops, on this day's date
+    // Use the last stop of the day (where you're spending the night) as the anchor
+    const anchor = day.stops[day.stops.length - 1];
+    if (!anchor?.coord) continue;
+
+    try {
+      // 30-mile radius around the anchor
+      const url = `https://app.ticketmaster.com/discovery/v2/events.json?` +
+        `latlong=${anchor.coord[0]},${anchor.coord[1]}` +
+        `&radius=30&unit=miles` +
+        `&startDateTime=${encodeURIComponent(startStr)}` +
+        `&endDateTime=${encodeURIComponent(endStr)}` +
+        `&size=10&sort=date,asc` +
+        `&apikey=${KEYS.tm}`;
+      const res = await fetch(url);
+      if (!res.ok) {
+        console.warn('Ticketmaster failed for day', dayIdx + 1, ':', res.status);
+        continue;
+      }
+      const data = await res.json();
+      const events = data._embedded?.events || [];
+      eventsByDay[dayIdx] = events.map(e => {
+        const venue = e._embedded?.venues?.[0];
+        const startISO = e.dates?.start?.dateTime || e.dates?.start?.localDate;
+        const localTime = e.dates?.start?.localTime;
+        const localDate = e.dates?.start?.localDate;
+        const segment = e.classifications?.[0]?.segment?.name || '';
+        const genre = e.classifications?.[0]?.genre?.name || '';
+        return {
+          name: e.name,
+          url: e.url,
+          date: localDate,
+          time: localTime,
+          dateTime: startISO,
+          venue: venue?.name,
+          venueCity: venue?.city?.name,
+          venueState: venue?.state?.stateCode,
+          lat: venue?.location?.latitude ? parseFloat(venue.location.latitude) : null,
+          lon: venue?.location?.longitude ? parseFloat(venue.location.longitude) : null,
+          segment,
+          genre,
+          image: e.images?.find(i => i.ratio === '16_9' && i.width >= 640)?.url
+        };
+      });
+    } catch (e) {
+      console.warn('Ticketmaster threw for day', dayIdx + 1, ':', e.message);
+    }
+  }
+
+  return eventsByDay;
+}
+
 /* ============ WIKIPEDIA SUMMARIES ============ */
 // Fetch a short Wikipedia summary for a place name. Uses the REST API which is
 // CORS-friendly and needs no key. Returns { extract, url, thumbnail } or null.
@@ -1897,6 +2036,16 @@ async function planTrip() {
       interests.includes('wikipedia') ? fetchWikiAlongRoute(route.geometry) : Promise.resolve([])
     ]);
 
+    // Ticketmaster events are fetched separately because they need dayPlan to exist
+    // (one query per day's overnight location with that day's date)
+    const startDate = document.getElementById('startDate').value;
+    const eventsByDay = (interests.includes('events') && KEYS.tm && startDate)
+      ? await (async () => {
+          setLoading('Finding events', `Looking up shows along your route on ${startDate}+`);
+          return await fetchTicketmasterEvents(dayPlan, startDate);
+        })()
+      : {};
+
     setLoading('Curating stops', 'Filtering by route proximity');
     const nearbyNPS = npsParks.filter(p => distToRoute(p, routeCoords) < 50);
 
@@ -2047,6 +2196,11 @@ async function planTrip() {
       day.picks = picks;
     });
 
+    // Attach Ticketmaster events to each day (already keyed by day index)
+    dayPlan.forEach((day, idx) => {
+      day.events = eventsByDay[idx] || [];
+    });
+
     // Wikipedia enrichment: fetch a summary for each named NPS park and each
     // unique day-stop city. Done after picking so we don't fetch unused entries.
     if (interests.includes('wikipedia')) {
@@ -2116,6 +2270,16 @@ async function planTrip() {
         `<b>${esc(b.name)}</b><br/>${esc(b.type || 'Brewery')}<br/>${b.website ? `<a href="${esc(b.website)}" target="_blank" rel="noopener">Website →</a>` : ''}`));
       d.picks.wiki?.forEach(w => placeMarker(w.lat, w.lon, 'W', '#5b7a8c',
         `<b>${esc(w.name)}</b><br/><a href="${esc(w.url)}" target="_blank" rel="noopener">Read on Wikipedia →</a>`));
+      d.events?.forEach(e => {
+        if (!e.lat || !e.lon) return;
+        const segLabel = [e.segment, e.genre].filter(Boolean).join(' · ');
+        const timeStr = e.time ? ` at ${esc(e.time)}` : '';
+        const popup = `<b>${esc(e.name)}</b><br/>
+          <span style="font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;opacity:0.7;">${esc(segLabel || 'Event')}${timeStr}</span><br/>
+          ${e.venue ? esc(e.venue) + '<br/>' : ''}
+          ${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">Tickets →</a>` : ''}`;
+        placeMarker(e.lat, e.lon, '🎟', '#5b7a8c', popup);
+      });
     });
 
     setLoading('Rendering', 'Almost there');
@@ -2157,6 +2321,7 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
   sources.push(KEYS.nps ? 'NPS ✓' : 'NPS — add key');
   sources.push(KEYS.ridb ? 'Rec.gov ✓' : 'Rec.gov — add key');
   sources.push(KEYS.fsq ? 'Foursquare ✓' : 'Foursquare — add key');
+  sources.push(KEYS.tm ? 'Ticketmaster ✓' : 'Ticketmaster — add key for events');
   sources.push('Wikipedia ✓');
   sources.push('OpenBreweryDB ✓');
   sources.push(window._wfRedditBlocked ? 'Reddit — blocked by browser' : 'Reddit ✓');
@@ -2297,6 +2462,30 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
       body += `</div>`;
     }
 
+    // Events from Ticketmaster — concerts, sports, theater, etc.
+    if (day.events?.length) {
+      body += `<div class="day-section"><div class="day-section-label">Happening While You're There</div>`;
+      day.events.forEach(e => {
+        const timeStr = e.time ? ` · <span class="event-time">${esc(e.time)}</span>` : '';
+        const venueStr = e.venue
+          ? `${esc(e.venue)}${e.venueCity ? ' · ' + esc(e.venueCity) : ''}${e.venueState ? ', ' + esc(e.venueState) : ''}`
+          : '';
+        const segLabel = [e.segment, e.genre].filter(Boolean).join(' · ');
+        const thumb = e.image
+          ? `<div class="event-thumb" style="background-image:url('${esc(e.image)}');"></div>`
+          : `<div class="event-thumb"></div>`;
+        body += `<div class="event-card">
+          ${thumb}
+          <div class="event-text">
+            <div class="event-name">${e.url ? `<a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.name)}</a>` : esc(e.name)}</div>
+            <div class="event-meta">${esc(segLabel || 'Event')}${timeStr}</div>
+            <div class="event-venue">${venueStr}</div>
+          </div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
     if (day.redditTips?.length) {
       body += `<div class="day-section"><div class="day-section-label">Reddit Travelers Said…</div>`;
       day.redditTips.forEach(t => {
@@ -2309,7 +2498,7 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
       body += `</div>`;
     }
 
-    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !foodLodgeCount && !day.picks.breweries?.length && !day.picks.wiki?.length && !day.stopWikis?.length && !day.redditTips?.length) {
+    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !foodLodgeCount && !day.picks.breweries?.length && !day.picks.wiki?.length && !day.stopWikis?.length && !day.events?.length && !day.redditTips?.length) {
       body += `<div style="font-style:italic;opacity:0.55;font-size:13px;padding:10px 0;">No specific picks for this stretch — try widening your interests, or add API keys for better park data.</div>`;
     }
 
@@ -2446,9 +2635,10 @@ function pickGrandLoopAnchors(start, finalDest, sameStartEnd) {
   // Cap at 6 anchors max for practical trip length
   return picks.slice(0, 6);
 }
-// Curated list of inspiring US road-trip destinations.
-// Picked for scenic value: national parks, historic towns, dramatic landscapes.
+// Curated list of US road-trip destinations. Now spans short day-trips through
+// cross-country epics. Tagged informally by region in the comments.
 const INSPIRE_DESTINATIONS = [
+  // National Parks & iconic destinations (long-haul)
   { name: 'Marfa, Texas', coord: [30.3119, -104.0214], blurb: 'Desert art town with mysterious lights' },
   { name: 'Taos, New Mexico', coord: [36.4072, -105.5734], blurb: 'Adobe pueblos & Sangre de Cristo views' },
   { name: 'Moab, Utah', coord: [38.5733, -109.5498], blurb: 'Red rock between Arches & Canyonlands' },
@@ -2473,7 +2663,73 @@ const INSPIRE_DESTINATIONS = [
   { name: 'Park City, Utah', coord: [40.6461, -111.4980], blurb: 'Wasatch Range charm' },
   { name: 'Santa Fe, New Mexico', coord: [35.6870, -105.9378], blurb: 'High desert art and history' },
   { name: 'Hot Springs, Arkansas', coord: [34.5037, -93.0552], blurb: 'Bathhouse row & Ouachita forests' },
-  { name: 'Eureka Springs, Arkansas', coord: [36.4015, -93.7377], blurb: 'Victorian Ozarks mountain town' }
+  { name: 'Eureka Springs, Arkansas', coord: [36.4015, -93.7377], blurb: 'Victorian Ozarks mountain town' },
+
+  // Regional cities (medium-haul, ~3-8 hrs from major hubs)
+  { name: 'Austin, Texas', coord: [30.2672, -97.7431], blurb: 'Live music capital, food trucks, lakes' },
+  { name: 'San Antonio, Texas', coord: [29.4241, -98.4936], blurb: 'River Walk, Alamo, Tex-Mex heart' },
+  { name: 'Fredericksburg, Texas', coord: [30.2752, -98.8720], blurb: 'Hill Country wine & German heritage' },
+  { name: 'Galveston, Texas', coord: [29.3013, -94.7977], blurb: 'Gulf beaches & Victorian seaside' },
+  { name: 'Dallas, Texas', coord: [32.7767, -96.7970], blurb: 'Arts district, BBQ, sports town' },
+  { name: 'Houston, Texas', coord: [29.7604, -95.3698], blurb: 'Space Center, museums, food diversity' },
+  { name: 'Memphis, Tennessee', coord: [35.1495, -90.0490], blurb: 'Graceland, Beale Street, smoked BBQ' },
+  { name: 'Birmingham, Alabama', coord: [33.5186, -86.8104], blurb: 'Civil Rights history & Southern food' },
+  { name: 'Atlanta, Georgia', coord: [33.7490, -84.3880], blurb: 'Aquarium, MLK historic sites, food' },
+  { name: 'St. Louis, Missouri', coord: [38.6270, -90.1994], blurb: 'Gateway Arch, Cardinals, free museums' },
+  { name: 'Kansas City, Missouri', coord: [39.0997, -94.5786], blurb: 'BBQ, jazz, fountains' },
+  { name: 'Oklahoma City, Oklahoma', coord: [35.4676, -97.5164], blurb: 'Stockyards, memorial, cowboy museums' },
+  { name: 'Branson, Missouri', coord: [36.6437, -93.2185], blurb: 'Live shows & Ozark lakes' },
+  { name: 'Louisville, Kentucky', coord: [38.2527, -85.7585], blurb: 'Bourbon trail & Derby city' },
+  { name: 'Cincinnati, Ohio', coord: [39.1031, -84.5120], blurb: 'Riverfront, chili, baseball' },
+  { name: 'Pittsburgh, Pennsylvania', coord: [40.4406, -79.9959], blurb: 'Three rivers, bridges, reinvention' },
+  { name: 'Philadelphia, Pennsylvania', coord: [39.9526, -75.1652], blurb: 'Independence Hall, cheesesteaks, art' },
+  { name: 'Washington, DC', coord: [38.9072, -77.0369], blurb: 'Free Smithsonians & monuments' },
+  { name: 'Boston, Massachusetts', coord: [42.3601, -71.0589], blurb: 'Freedom Trail & seafood' },
+  { name: 'Portland, Maine', coord: [43.6591, -70.2568], blurb: 'Lobster shacks & lighthouses' },
+  { name: 'Burlington, Vermont', coord: [44.4759, -73.2121], blurb: 'Lake Champlain & Ben & Jerry\'s' },
+  { name: 'Chicago, Illinois', coord: [41.8781, -87.6298], blurb: 'Architecture, deep dish, lakefront' },
+  { name: 'Madison, Wisconsin', coord: [43.0731, -89.4012], blurb: 'Two-lake college town with State Street' },
+  { name: 'Minneapolis, Minnesota', coord: [44.9778, -93.2650], blurb: 'Lakes, Walker Art, indie scene' },
+  { name: 'Duluth, Minnesota', coord: [46.7867, -92.1005], blurb: 'Lake Superior shipping town' },
+  { name: 'Denver, Colorado', coord: [39.7392, -104.9903], blurb: 'Mile High gateway to Rockies' },
+  { name: 'Boulder, Colorado', coord: [40.0150, -105.2705], blurb: 'Pearl Street, flatirons, trailheads' },
+  { name: 'Colorado Springs, Colorado', coord: [38.8339, -104.8214], blurb: 'Pikes Peak & Garden of the Gods' },
+  { name: 'Salt Lake City, Utah', coord: [40.7608, -111.8910], blurb: 'Wasatch ski-town gateway' },
+  { name: 'Las Vegas, Nevada', coord: [36.1699, -115.1398], blurb: 'Strip plus surprising desert hikes' },
+  { name: 'San Diego, California', coord: [32.7157, -117.1611], blurb: 'Beaches, Balboa Park, fish tacos' },
+  { name: 'Los Angeles, California', coord: [34.0522, -118.2437], blurb: 'Beaches, hills, museums, tacos' },
+  { name: 'San Francisco, California', coord: [37.7749, -122.4194], blurb: 'Golden Gate, sourdough, hills' },
+  { name: 'Portland, Oregon', coord: [45.5152, -122.6784], blurb: 'Coffee, food carts, forested parks' },
+  { name: 'Seattle, Washington', coord: [47.6062, -122.3321], blurb: 'Pike Place, ferries, mountain views' },
+  { name: 'Phoenix, Arizona', coord: [33.4484, -112.0740], blurb: 'Desert hikes, spring training, Mexican food' },
+  { name: 'Tucson, Arizona', coord: [32.2226, -110.9747], blurb: 'Saguaros, Mission, dark skies' },
+  { name: 'Albuquerque, New Mexico', coord: [35.0844, -106.6504], blurb: 'Old Town, balloons, green chile' },
+  { name: 'Boise, Idaho', coord: [43.6150, -116.2023], blurb: 'River greenbelt & high-desert mountains' },
+  { name: 'Jackson, Wyoming', coord: [43.4799, -110.7624], blurb: 'Tetons & elk refuge' },
+  { name: 'Bozeman, Montana', coord: [45.6770, -111.0429], blurb: 'Yellowstone\'s northern doorstep' },
+  { name: 'Whitefish, Montana', coord: [48.4108, -114.3375], blurb: 'Glacier NP small-town basecamp' },
+  { name: 'Cleveland, Ohio', coord: [41.4993, -81.6944], blurb: 'Rock Hall & lakefront comeback' },
+  { name: 'Detroit, Michigan', coord: [42.3314, -83.0458], blurb: 'Motown & ambitious revitalization' },
+  { name: 'Indianapolis, Indiana', coord: [39.7684, -86.1581], blurb: 'Speedway, canal walk, museums' },
+  { name: 'Knoxville, Tennessee', coord: [35.9606, -83.9207], blurb: 'Smokies gateway with Old City charm' },
+  { name: 'Chattanooga, Tennessee', coord: [35.0456, -85.3097], blurb: 'Riverfront aquarium & Lookout Mtn' },
+  { name: 'Tulsa, Oklahoma', coord: [36.1540, -95.9928], blurb: 'Art deco downtown & Route 66 history' },
+  { name: 'Omaha, Nebraska', coord: [41.2565, -95.9345], blurb: 'Old Market, zoo, steaks' },
+  { name: 'Sioux Falls, South Dakota', coord: [43.5460, -96.7313], blurb: 'Pink quartzite falls in the city center' },
+  { name: 'Helen, Georgia', coord: [34.7026, -83.7263], blurb: 'Bavarian alpine village in N Georgia' },
+  { name: 'Helena, Montana', coord: [46.5891, -112.0391], blurb: 'Capital with Last Chance Gulch' },
+  { name: 'Wilmington, North Carolina', coord: [34.2257, -77.9447], blurb: 'Riverwalk & nearby beaches' },
+  { name: 'Hilton Head, South Carolina', coord: [32.2163, -80.7526], blurb: 'Bike paths, beaches, marshes' },
+  { name: 'Pensacola, Florida', coord: [30.4213, -87.2169], blurb: 'White-sand Gulf beaches & naval museum' },
+  { name: 'Key West, Florida', coord: [24.5551, -81.7800], blurb: 'End of the road, sunsets, Hemingway' },
+  { name: 'St. Augustine, Florida', coord: [29.9012, -81.3124], blurb: 'Oldest US city with Spanish forts' },
+  { name: 'Wisconsin Dells, Wisconsin', coord: [43.6275, -89.7710], blurb: 'Sandstone river gorges & waterparks' },
+  { name: 'Lake Tahoe, California', coord: [39.0968, -120.0324], blurb: 'Crystal alpine lake straddling NV/CA' },
+  { name: 'Mammoth Lakes, California', coord: [37.6485, -118.9721], blurb: 'Eastern Sierra basecamp' },
+  { name: 'Estes Park, Colorado', coord: [40.3772, -105.5217], blurb: 'Rocky Mountain NP doorstep' },
+  { name: 'Durango, Colorado', coord: [37.2753, -107.8801], blurb: 'Narrow-gauge railroad & San Juan peaks' },
+  { name: 'Williamsburg, Virginia', coord: [37.2707, -76.7075], blurb: 'Living-history colonial town' },
+  { name: 'Newport, Rhode Island', coord: [41.4901, -71.3128], blurb: 'Gilded Age mansions & Cliff Walk' }
 ];
 
 async function inspireMe() {
