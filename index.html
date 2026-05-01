@@ -1,0 +1,2178 @@
+<!DOCTYPE html>
+<!-- Wayfinder v0.7.2 — ORS snap validation for loop candidates -->
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Wayfinder — Road Trip Planner</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --cream: #f4ead5;
+    --paper: #ebdfc1;
+    --ink: #1f2417;
+    --rust: #b34727;
+    --rust-dark: #8a3319;
+    --moss: #4a5d3a;
+    --moss-light: #6e8054;
+    --sun: #d4a017;
+    --sky: #5b7a8c;
+    --shadow: rgba(31, 36, 23, 0.18);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Fraunces', Georgia, serif;
+    background: var(--cream); color: var(--ink); min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 20% 30%, rgba(179, 71, 39, 0.04) 0%, transparent 50%),
+      radial-gradient(circle at 80% 70%, rgba(74, 93, 58, 0.05) 0%, transparent 50%);
+  }
+  body::before {
+    content: ''; position: fixed; inset: 0; pointer-events: none;
+    opacity: 0.4; z-index: 1;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.12 0 0 0 0 0.14 0 0 0 0 0.09 0 0 0 0.08 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+  header {
+    position: relative; z-index: 2;
+    padding: 24px 32px 16px;
+    border-bottom: 2px solid var(--ink);
+    display: flex; align-items: baseline; justify-content: space-between;
+    flex-wrap: wrap; gap: 12px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand-mark {
+    font-family: 'Abril Fatface', serif; font-size: 38px; line-height: 1;
+    color: var(--rust); letter-spacing: -0.02em;
+  }
+  .brand-mark::first-letter { color: var(--moss); }
+  .tagline {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.2em; opacity: 0.7;
+  }
+  .header-actions { display: flex; align-items: center; gap: 14px; }
+  .keys-btn {
+    background: transparent; border: 1.5px solid var(--ink);
+    padding: 6px 14px; font-family: 'DM Mono', monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em;
+    cursor: pointer; color: var(--ink); transition: all 0.15s;
+  }
+  .keys-btn:hover { background: var(--ink); color: var(--cream); }
+  .keys-btn .status {
+    display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--rust); margin-right: 6px; vertical-align: middle;
+  }
+  .keys-btn.configured .status { background: var(--moss); }
+  .meta {
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.18em; opacity: 0.6;
+  }
+  main {
+    position: relative; z-index: 2;
+    display: grid; grid-template-columns: 420px 1fr;
+    height: calc(100vh - 76px);
+  }
+  @media (max-width: 900px) {
+    main { grid-template-columns: 1fr; height: auto; }
+    .sidebar { max-height: none !important; border-right: none !important; border-bottom: 2px solid var(--ink); }
+    .map-wrap { height: 60vh; }
+  }
+  .sidebar {
+    background: var(--paper); border-right: 2px solid var(--ink);
+    overflow-y: auto; padding: 24px 22px 32px;
+    box-shadow: inset -4px 0 12px rgba(31, 36, 23, 0.04);
+  }
+  .sidebar::-webkit-scrollbar { width: 8px; }
+  .sidebar::-webkit-scrollbar-track { background: transparent; }
+  .sidebar::-webkit-scrollbar-thumb { background: var(--ink); opacity: 0.3; border-radius: 4px; }
+  .section-label {
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.22em;
+    color: var(--rust-dark); margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .section-label::before {
+    content: ''; display: inline-block; width: 18px; height: 1px;
+    background: var(--rust-dark);
+  }
+  .stops { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
+  .stop-row {
+    display: grid; grid-template-columns: 28px 1fr 28px;
+    align-items: center; gap: 8px;
+  }
+  .stop-marker {
+    width: 28px; height: 28px;
+    border: 2px solid var(--ink); border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Mono', monospace; font-size: 11px; font-weight: 500;
+    background: var(--cream);
+  }
+  .stop-marker.start { background: var(--moss); color: var(--cream); }
+  .stop-marker.end { background: var(--rust); color: var(--cream); }
+  .stop-input {
+    width: 100%; padding: 10px 12px;
+    border: 1.5px solid var(--ink); background: var(--cream);
+    font-family: 'Fraunces', serif; font-size: 15px;
+    color: var(--ink); outline: none; transition: background 0.15s;
+  }
+  .stop-input:focus { background: #fff; box-shadow: 2px 2px 0 var(--ink); transform: translate(-1px, -1px); }
+  .stop-remove {
+    width: 28px; height: 28px; border: none; background: transparent;
+    cursor: pointer; font-size: 18px; color: var(--ink); opacity: 0.4;
+    transition: opacity 0.15s;
+  }
+  .stop-remove:hover { opacity: 1; color: var(--rust); }
+  .stop-remove:disabled { visibility: hidden; }
+  .add-stop {
+    width: 100%; padding: 10px;
+    border: 1.5px dashed var(--ink); background: transparent; cursor: pointer;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.18em;
+    color: var(--ink); transition: all 0.15s; margin-bottom: 26px;
+  }
+  .add-stop:hover { background: var(--ink); color: var(--cream); }
+  .controls-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 14px; margin-bottom: 24px;
+  }
+  .control-block label {
+    display: block; font-family: 'DM Mono', monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.18em;
+    margin-bottom: 6px; opacity: 0.7;
+  }
+  .control-block select, .control-block input {
+    width: 100%; padding: 8px 10px;
+    border: 1.5px solid var(--ink); background: var(--cream);
+    font-family: 'Fraunces', serif; font-size: 14px;
+    color: var(--ink); outline: none;
+  }
+  .checks { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 26px; }
+  .check-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border: 1.5px solid var(--ink); border-radius: 100px;
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    cursor: pointer; transition: all 0.15s; user-select: none;
+  }
+  .check-pill input { display: none; }
+  .check-pill.on { background: var(--moss); color: var(--cream); border-color: var(--moss); }
+  .plan-btn {
+    width: 100%; padding: 16px;
+    background: var(--rust); color: var(--cream);
+    border: 2px solid var(--ink); box-shadow: 4px 4px 0 var(--ink);
+    cursor: pointer; font-family: 'Abril Fatface', serif;
+    font-size: 22px; letter-spacing: 0.04em;
+    transition: all 0.1s; margin-bottom: 24px;
+  }
+  .plan-btn:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--ink); }
+  .plan-btn:active { transform: translate(2px, 2px); box-shadow: 2px 2px 0 var(--ink); }
+  .plan-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .inspire-btn {
+    width: 100%;
+    padding: 12px;
+    background: transparent;
+    color: var(--ink);
+    border: 1.5px solid var(--ink);
+    cursor: pointer;
+    font-family: 'Fraunces', serif;
+    font-size: 14px;
+    font-style: italic;
+    transition: all 0.15s;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .inspire-btn:hover {
+    background: var(--sun);
+    border-color: var(--sun);
+    color: var(--ink);
+  }
+
+  .inspire-btn:disabled { opacity: 0.5; cursor: wait; }
+
+  .inspire-icon {
+    display: inline-block;
+    color: var(--rust);
+    font-size: 18px;
+    transition: transform 0.4s;
+  }
+
+  .inspire-btn:hover .inspire-icon {
+    transform: rotate(180deg);
+    color: var(--ink);
+  }
+  .summary {
+    background: var(--cream); border: 1.5px solid var(--ink);
+    padding: 16px; margin-bottom: 20px;
+  }
+  .summary-row {
+    display: flex; justify-content: space-between; align-items: baseline;
+    padding: 6px 0; font-family: 'DM Mono', monospace; font-size: 12px;
+  }
+  .summary-row + .summary-row { border-top: 1px dashed rgba(31,36,23,0.2); }
+  .summary-row .label { text-transform: uppercase; letter-spacing: 0.14em; opacity: 0.7; font-size: 10px; }
+  .summary-row .val { font-family: 'Fraunces', serif; font-size: 16px; font-weight: 600; }
+  .day-card {
+    background: var(--cream); border: 1.5px solid var(--ink);
+    margin-bottom: 14px; box-shadow: 3px 3px 0 var(--ink);
+  }
+  .day-header {
+    background: var(--ink); color: var(--cream);
+    padding: 10px 14px;
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: 'DM Mono', monospace;
+  }
+  .day-header .day-num { font-family: 'Abril Fatface', serif; font-size: 22px; letter-spacing: 0.04em; }
+  .day-header .day-stat { font-size: 11px; text-transform: uppercase; letter-spacing: 0.14em; opacity: 0.85; }
+  .day-body { padding: 14px; }
+  .day-route {
+    font-family: 'Fraunces', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px;
+  }
+  .day-route .arrow { color: var(--rust); margin: 0 6px; font-weight: 800; }
+  .pick {
+    display: flex; gap: 10px; padding: 10px 0;
+    border-top: 1px dotted rgba(31,36,23,0.25);
+  }
+  .pick:first-child { border-top: none; }
+  .pick-icon { flex-shrink: 0; width: 22px; font-size: 14px; text-align: center; padding-top: 2px; }
+  .pick-text { flex: 1; font-size: 14px; }
+  .pick-name { font-weight: 600; }
+  .pick-name a { color: inherit; text-decoration: none; border-bottom: 1px dotted var(--rust); }
+  .pick-name a:hover { color: var(--rust); }
+  .pick-meta {
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    opacity: 0.65; margin-top: 1px;
+  }
+  .pick-detail { font-size: 13px; margin-top: 4px; line-height: 1.4; opacity: 0.85; }
+  .pick-links { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .pick-link {
+    font-family: 'DM Mono', monospace; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 0.14em;
+    padding: 3px 8px; border: 1px solid var(--ink);
+    background: transparent; color: var(--ink);
+    text-decoration: none; transition: all 0.15s;
+  }
+  .pick-link:hover { background: var(--ink); color: var(--cream); }
+  .pick-link.reddit { border-color: var(--rust); color: var(--rust); }
+  .pick-link.reddit:hover { background: var(--rust); color: var(--cream); }
+  .pick-link.tripadv { border-color: var(--moss); color: var(--moss); }
+  .pick-link.tripadv:hover { background: var(--moss); color: var(--cream); }
+  .day-section {
+    margin-top: 14px; padding-top: 10px; border-top: 2px solid var(--ink);
+  }
+  .day-section-label {
+    font-family: 'DM Mono', monospace; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 0.18em;
+    color: var(--rust-dark); margin-bottom: 6px;
+  }
+  .reddit-quote {
+    background: rgba(179, 71, 39, 0.08);
+    border-left: 3px solid var(--rust);
+    padding: 8px 10px; margin: 6px 0; font-size: 13px; font-style: italic;
+  }
+  .reddit-quote .meta {
+    display: block; font-family: 'DM Mono', monospace;
+    font-size: 9px; font-style: normal; opacity: 0.65; margin-top: 4px;
+    letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .empty-state {
+    text-align: center; padding: 40px 20px; opacity: 0.5;
+    font-style: italic; border: 1.5px dashed var(--ink);
+  }
+  .empty-state .compass {
+    font-size: 48px; margin-bottom: 12px; display: inline-block;
+    animation: spin 8s linear infinite;
+  }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  .map-wrap { position: relative; background: #aac4d9; }
+  #map { width: 100%; height: 100%; background: #c9d6e0; }
+  .map-overlay {
+    position: absolute; bottom: 16px; left: 16px; z-index: 500;
+    background: var(--cream); border: 1.5px solid var(--ink);
+    padding: 8px 12px; font-family: 'DM Mono', monospace;
+    font-size: 10px; text-transform: uppercase; letter-spacing: 0.14em;
+    box-shadow: 2px 2px 0 var(--ink); max-width: 240px; line-height: 1.5;
+  }
+  .compass-rose {
+    position: absolute; top: 16px; right: 16px; z-index: 500;
+    width: 70px; height: 70px;
+    background: var(--cream); border: 1.5px solid var(--ink);
+    border-radius: 50%; box-shadow: 2px 2px 0 var(--ink);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .compass-rose svg { width: 56px; height: 56px; }
+  .leaflet-popup-content-wrapper {
+    background: var(--cream); border: 1.5px solid var(--ink);
+    border-radius: 0; box-shadow: 3px 3px 0 var(--ink);
+    font-family: 'Fraunces', serif;
+  }
+  .leaflet-popup-content { margin: 10px 14px; font-size: 14px; max-width: 260px; }
+  .leaflet-popup-content b { font-family: 'Abril Fatface', serif; font-size: 16px; color: var(--rust); }
+  .leaflet-popup-tip { background: var(--cream); border: 1.5px solid var(--ink); }
+  .loading {
+    position: absolute; inset: 0;
+    background: rgba(244, 234, 213, 0.85);
+    display: none; flex-direction: column;
+    align-items: center; justify-content: center;
+    z-index: 1000; font-family: 'Abril Fatface', serif; color: var(--rust);
+  }
+  .loading.show { display: flex; }
+  .loading-title { font-size: 28px; }
+  .loading-sub {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.22em;
+    color: var(--ink); margin-top: 8px; opacity: 0.7;
+  }
+  .loading-text::after { content: '...'; animation: dots 1.4s infinite; }
+  @keyframes dots {
+    0%, 20% { content: '.'; } 40% { content: '..'; } 60%, 100% { content: '...'; }
+  }
+  .suggestions {
+    position: absolute; background: var(--cream);
+    border: 1.5px solid var(--ink); box-shadow: 3px 3px 0 var(--ink);
+    z-index: 2000; max-height: 220px; overflow-y: auto; width: 320px;
+  }
+  .suggestion-item {
+    padding: 8px 12px; cursor: pointer; font-size: 13px;
+    border-bottom: 1px dotted rgba(31,36,23,0.2);
+  }
+  .suggestion-item:hover { background: var(--paper); }
+  .suggestion-item:last-child { border-bottom: none; }
+  .error {
+    background: var(--rust); color: var(--cream);
+    padding: 10px 14px; margin-bottom: 16px;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.14em;
+    border: 1.5px solid var(--ink);
+  }
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(31, 36, 23, 0.6);
+    display: none; align-items: center; justify-content: center;
+    z-index: 5000; padding: 20px;
+  }
+  .modal-backdrop.show { display: flex; }
+  .modal {
+    background: var(--cream); border: 2px solid var(--ink);
+    box-shadow: 6px 6px 0 var(--ink);
+    max-width: 540px; width: 100%; max-height: 90vh;
+    overflow-y: auto; padding: 28px 30px;
+  }
+  .modal h2 {
+    font-family: 'Abril Fatface', serif; font-size: 28px;
+    margin-bottom: 6px; color: var(--rust);
+  }
+  .modal .modal-sub {
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.18em;
+    opacity: 0.7; margin-bottom: 20px;
+  }
+  .modal .key-block {
+    margin-bottom: 22px; padding-bottom: 18px;
+    border-bottom: 1px dashed rgba(31,36,23,0.3);
+  }
+  .modal .key-block:last-of-type { border-bottom: none; }
+  .modal .key-name { font-family: 'Fraunces', serif; font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .modal .key-desc { font-size: 13px; opacity: 0.8; margin-bottom: 8px; line-height: 1.4; }
+  .modal .key-link {
+    font-family: 'DM Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.14em;
+    color: var(--rust); text-decoration: none;
+    border-bottom: 1px dotted var(--rust);
+  }
+  .modal .key-link:hover { color: var(--rust-dark); }
+  .modal input[type="text"], .modal input[type="password"] {
+    width: 100%; padding: 10px 12px;
+    border: 1.5px solid var(--ink); background: var(--cream);
+    font-family: 'DM Mono', monospace; font-size: 13px;
+    color: var(--ink); outline: none; margin-top: 8px;
+  }
+  .modal input:focus { background: #fff; }
+  .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+  .modal-btn {
+    padding: 10px 20px; border: 1.5px solid var(--ink);
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.18em;
+    cursor: pointer; background: var(--cream); color: var(--ink);
+    transition: all 0.15s;
+  }
+  .modal-btn.primary { background: var(--ink); color: var(--cream); box-shadow: 3px 3px 0 var(--rust); }
+  .modal-btn.primary:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--rust); }
+  .modal-btn:hover { background: var(--ink); color: var(--cream); }
+  .modal-note {
+    font-size: 12px; background: var(--paper);
+    padding: 12px 14px; border-left: 3px solid var(--moss);
+    margin-bottom: 18px; font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-mark">Wayfinder</div>
+    <div class="tagline">— A Road Trip Planner</div>
+  </div>
+  <div class="header-actions">
+    <button class="keys-btn" id="keysBtn"><span class="status"></span>API Keys</button>
+    <span class="meta">Est. MMXXVI</span>
+  </div>
+</header>
+
+<main>
+  <aside class="sidebar">
+    <div class="section-label">Itinerary</div>
+    <div class="stops" id="stops"></div>
+    <button class="add-stop" id="addStop">+ Add a Stop</button>
+
+    <div class="section-label">Trip Settings</div>
+    <div class="controls-grid">
+      <div class="control-block">
+        <label>Total Days</label>
+        <input type="number" id="days" min="1" max="30" value="5" />
+      </div>
+      <div class="control-block">
+        <label>Hrs Driving / Day</label>
+        <select id="hoursPerDay">
+          <option value="3">3 — leisurely</option>
+          <option value="5" selected>5 — balanced</option>
+          <option value="7">7 — pushing it</option>
+          <option value="9">9 — marathon</option>
+        </select>
+      </div>
+    </div>
+    <label class="check-pill" id="roundTripPill" style="margin-bottom:10px;display:inline-flex;">
+      <input type="checkbox" id="roundTrip" />Round Trip — return to start
+    </label>
+    <label class="check-pill" id="grandLoopPill" style="margin-bottom:24px;display:inline-flex;">
+      <input type="checkbox" id="grandLoop" />Grand Loop — multi-region perimeter trip
+    </label>
+
+    <div class="section-label">Interests Along the Way</div>
+    <div class="checks" id="interests">
+      <label class="check-pill on"><input type="checkbox" value="national_park" checked />National Parks</label>
+      <label class="check-pill on"><input type="checkbox" value="state_park" checked />State Parks</label>
+      <label class="check-pill on"><input type="checkbox" value="campground" checked />Campgrounds</label>
+      <label class="check-pill on"><input type="checkbox" value="scenic" checked />Scenic Stops</label>
+      <label class="check-pill on"><input type="checkbox" value="food" checked />Local Eats</label>
+      <label class="check-pill on"><input type="checkbox" value="lodging" checked />Lodging</label>
+      <label class="check-pill"><input type="checkbox" value="historic" />Historic Sites</label>
+      <label class="check-pill on"><input type="checkbox" value="reddit" checked />Reddit Tips</label>
+    </div>
+
+    <button class="plan-btn" id="planBtn">Chart the Route →</button>
+
+    <button class="inspire-btn" id="inspireBtn">
+      <span class="inspire-icon">✦</span> Inspire Me — Surprise Trip
+    </button>
+
+    <div id="errorBox"></div>
+    <div id="results">
+      <div class="empty-state">
+        <div class="compass">✦</div>
+        <div>Plug in a start &amp; destination,<br/>then chart your route.</div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="loading" id="loading">
+      <div class="loading-title loading-text">Plotting course</div>
+      <div class="loading-sub" id="loadingSub">Querying open road archives</div>
+    </div>
+    <div class="compass-rose">
+      <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="1.5">
+        <circle cx="50" cy="50" r="36" stroke="#1f2417" />
+        <path d="M50 16 L54 50 L50 84 L46 50 Z" fill="#b34727" stroke="#1f2417"/>
+        <path d="M16 50 L50 46 L84 50 L50 54 Z" fill="#1f2417" opacity="0.15" stroke="#1f2417"/>
+        <text x="50" y="14" text-anchor="middle" font-family="Abril Fatface" font-size="10" fill="#1f2417" stroke="none">N</text>
+      </svg>
+    </div>
+    <div class="map-overlay">
+      Click any marker for details · Drag to pan · Scroll to zoom
+    </div>
+  </div>
+</main>
+
+<div class="modal-backdrop" id="keysModal">
+  <div class="modal">
+    <h2>API Keys</h2>
+    <div class="modal-sub">Optional — add for richer data</div>
+    <div class="modal-note">
+      Keys are stored locally in your browser only. Never sent anywhere except the official API endpoints. Free to obtain — all take under a minute.
+    </div>
+    <div class="key-block">
+      <div class="key-name">OpenRouteService <span style="background:var(--rust);color:var(--cream);font-family:'DM Mono',monospace;font-size:9px;padding:2px 6px;letter-spacing:0.14em;text-transform:uppercase;margin-left:6px;">Recommended</span></div>
+      <div class="key-desc">Reliable routing & drive-time calculations. The free public OSRM servers are flaky — get a free ORS key (2,000 requests/day) for production use.</div>
+      <a href="https://openrouteservice.org/dev/#/signup" target="_blank" class="key-link">Get a free OpenRouteService key →</a>
+      <input type="password" id="orsKey" placeholder="Paste your OpenRouteService API key here" />
+    </div>
+    <div class="key-block">
+      <div class="key-name">National Park Service</div>
+      <div class="key-desc">Adds authoritative park descriptions, hours, fees, alerts, and things-to-do.</div>
+      <a href="https://www.nps.gov/subjects/developer/get-started.htm" target="_blank" class="key-link">Get a free NPS key →</a>
+      <input type="password" id="npsKey" placeholder="Paste your NPS API key here" />
+    </div>
+    <div class="key-block">
+      <div class="key-name">Recreation.gov (RIDB)</div>
+      <div class="key-desc">Adds federal campgrounds, reservable sites, and recreation areas across BLM, USFS, NPS, and more.</div>
+      <a href="https://ridb.recreation.gov/profile" target="_blank" class="key-link">Get a free Recreation.gov key →</a>
+      <input type="password" id="ridbKey" placeholder="Paste your Recreation.gov API key here" />
+    </div>
+    <div class="key-block">
+      <div class="key-name">Foursquare Places <span style="background:var(--moss);color:var(--cream);font-family:'DM Mono',monospace;font-size:9px;padding:2px 6px;letter-spacing:0.14em;text-transform:uppercase;margin-left:6px;">Better food/lodging</span></div>
+      <div class="key-desc">Replaces OSM food &amp; lodging picks with curated independents from Foursquare's database — better categorization, ratings, and photos. Free tier: 10,000 calls/month.</div>
+      <a href="https://foursquare.com/developers/signup" target="_blank" class="key-link">Get a free Foursquare key →</a>
+      <input type="password" id="fsqKey" placeholder="Paste your Foursquare Service API key here" />
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn" id="clearKeys">Clear</button>
+      <button class="modal-btn primary" id="saveKeys">Save Keys</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+const state = {
+  stops: [
+    { id: 1, name: '', coord: null },
+    { id: 2, name: '', coord: null }
+  ],
+  nextId: 3, routeLayer: null, poiLayer: null, stopMarkers: []
+};
+
+const KEYS = {
+  nps: localStorage.getItem('wf_nps_key') || '',
+  ridb: localStorage.getItem('wf_ridb_key') || '',
+  ors: localStorage.getItem('wf_ors_key') || '',
+  fsq: localStorage.getItem('wf_fsq_key') || ''
+};
+
+const keysBtn = document.getElementById('keysBtn');
+const keysModal = document.getElementById('keysModal');
+
+function refreshKeysBadge() {
+  keysBtn.classList.toggle('configured', !!(KEYS.nps || KEYS.ridb || KEYS.ors || KEYS.fsq));
+}
+keysBtn.addEventListener('click', () => {
+  document.getElementById('npsKey').value = KEYS.nps;
+  document.getElementById('ridbKey').value = KEYS.ridb;
+  document.getElementById('orsKey').value = KEYS.ors;
+  document.getElementById('fsqKey').value = KEYS.fsq;
+  keysModal.classList.add('show');
+});
+document.getElementById('saveKeys').addEventListener('click', () => {
+  KEYS.nps = document.getElementById('npsKey').value.trim();
+  KEYS.ridb = document.getElementById('ridbKey').value.trim();
+  KEYS.ors = document.getElementById('orsKey').value.trim();
+  KEYS.fsq = document.getElementById('fsqKey').value.trim();
+  localStorage.setItem('wf_nps_key', KEYS.nps);
+  localStorage.setItem('wf_ridb_key', KEYS.ridb);
+  localStorage.setItem('wf_ors_key', KEYS.ors);
+  localStorage.setItem('wf_fsq_key', KEYS.fsq);
+  refreshKeysBadge();
+  keysModal.classList.remove('show');
+});
+document.getElementById('clearKeys').addEventListener('click', () => {
+  document.getElementById('npsKey').value = '';
+  document.getElementById('ridbKey').value = '';
+  document.getElementById('orsKey').value = '';
+  document.getElementById('fsqKey').value = '';
+  KEYS.nps = ''; KEYS.ridb = ''; KEYS.ors = ''; KEYS.fsq = '';
+  localStorage.removeItem('wf_nps_key');
+  localStorage.removeItem('wf_ridb_key');
+  localStorage.removeItem('wf_ors_key');
+  localStorage.removeItem('wf_fsq_key');
+  refreshKeysBadge();
+});
+keysModal.addEventListener('click', e => {
+  if (e.target === keysModal) keysModal.classList.remove('show');
+});
+refreshKeysBadge();
+
+const map = L.map('map', { zoomControl: true, attributionControl: true })
+  .setView([39.5, -98.35], 4);
+// CARTO Voyager — works from file:// without referer issues, looks great with our palette
+const cartoLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+  maxZoom: 19,
+  attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> · © <a href="https://carto.com/attributions">CARTO</a>',
+  subdomains: 'abcd',
+  className: 'map-tiles'
+}).addTo(map);
+
+// Topographic alternative
+const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  maxZoom: 17,
+  attribution: 'Map data: © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: © <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)',
+  className: 'map-tiles'
+});
+
+L.control.layers({
+  'Road Map': cartoLayer,
+  'Topographic': topoLayer
+}, null, { position: 'topleft' }).addTo(map);
+
+const styleEl = document.createElement('style');
+styleEl.textContent = `.map-tiles { filter: sepia(0.18) saturate(0.85) brightness(1.01) hue-rotate(-6deg); }`;
+document.head.appendChild(styleEl);
+state.routeLayer = L.layerGroup().addTo(map);
+state.poiLayer = L.layerGroup().addTo(map);
+
+function renderStops() {
+  const container = document.getElementById('stops');
+  container.innerHTML = '';
+  state.stops.forEach((stop, idx) => {
+    const isStart = idx === 0;
+    const isEnd = idx === state.stops.length - 1;
+    const markerClass = isStart ? 'start' : (isEnd ? 'end' : '');
+    const markerLabel = String.fromCharCode(65 + idx);
+    const row = document.createElement('div');
+    row.className = 'stop-row';
+    row.innerHTML = `
+      <div class="stop-marker ${markerClass}">${markerLabel}</div>
+      <div style="position:relative;">
+        <input class="stop-input" placeholder="${isStart ? 'Starting point' : (isEnd ? 'Final destination' : 'Waypoint')}"
+               value="${stop.name.replace(/"/g, '&quot;')}" data-id="${stop.id}" autocomplete="off" />
+      </div>
+      <button class="stop-remove" data-id="${stop.id}" ${state.stops.length <= 2 ? 'disabled' : ''}>×</button>
+    `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('.stop-input').forEach(input => {
+    input.addEventListener('input', e => handleSearch(e.target));
+    input.addEventListener('blur', () => setTimeout(closeSuggestions, 200));
+  });
+  container.querySelectorAll('.stop-remove').forEach(btn => {
+    btn.addEventListener('click', e => {
+      const id = parseInt(e.target.dataset.id);
+      state.stops = state.stops.filter(s => s.id !== id);
+      renderStops();
+    });
+  });
+}
+
+document.getElementById('addStop').addEventListener('click', () => {
+  state.stops.splice(state.stops.length - 1, 0, { id: state.nextId++, name: '', coord: null });
+  renderStops();
+});
+
+// Simple in-memory cache for Nominatim queries — saves repeat lookups for the same input
+const _geocodeCache = new Map();
+let _nominatimQueue = Promise.resolve();
+
+// Serializes Nominatim requests with at least 1.1s between them.
+// Uses a promise chain so parallel callers (e.g., Promise.all) queue properly
+// instead of racing the rate limiter.
+function rateLimitedNominatim(url) {
+  const next = _nominatimQueue.then(async () => {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    // Hold the queue for 1.1s after this request completes
+    await new Promise(r => setTimeout(r, 1100));
+    return res;
+  });
+  // The next call shouldn't propagate errors from this one
+  _nominatimQueue = next.catch(() => {});
+  return next;
+}
+
+let searchTimeout;
+function handleSearch(inputEl) {
+  const query = inputEl.value.trim();
+  const id = parseInt(inputEl.dataset.id);
+  const stop = state.stops.find(s => s.id === id);
+  if (stop) { stop.name = query; stop.coord = null; }
+  closeSuggestions();
+  // Require at least 4 chars and don't search until user pauses for a full second
+  if (query.length < 4) return;
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(async () => {
+    // Check cache first
+    if (_geocodeCache.has(query)) {
+      showSuggestions(inputEl, _geocodeCache.get(query), id);
+      return;
+    }
+    try {
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&countrycodes=us,ca,mx&addressdetails=1`;
+      const res = await rateLimitedNominatim(url);
+      if (res.status === 429) {
+        // Show a friendly notice in the input area
+        showRateLimitNotice(inputEl);
+        return;
+      }
+      if (!res.ok) { console.warn('Geocoding failed:', res.status); return; }
+      const data = await res.json();
+      _geocodeCache.set(query, data);
+      showSuggestions(inputEl, data, id);
+    } catch (e) { console.error('Geocoding error:', e); }
+  }, 800);
+}
+
+function showRateLimitNotice(inputEl) {
+  closeSuggestions();
+  const box = document.createElement('div');
+  box.className = 'suggestions';
+  box.id = 'sugBox';
+  const rect = inputEl.getBoundingClientRect();
+  box.style.left = rect.left + 'px';
+  box.style.top = (rect.bottom + window.scrollY + 2) + 'px';
+  box.innerHTML = `<div class="suggestion-item" style="font-style:italic;color:var(--rust);cursor:default;">
+    Geocoder rate-limited — wait ~5 minutes, type slower, or paste full names.
+  </div>`;
+  document.body.appendChild(box);
+}
+
+function showSuggestions(inputEl, results, stopId) {
+  closeSuggestions();
+  if (!results.length) return;
+  const box = document.createElement('div');
+  box.className = 'suggestions';
+  box.id = 'sugBox';
+  const rect = inputEl.getBoundingClientRect();
+  box.style.left = rect.left + 'px';
+  box.style.top = (rect.bottom + window.scrollY + 2) + 'px';
+  results.forEach(r => {
+    const item = document.createElement('div');
+    item.className = 'suggestion-item';
+    item.textContent = r.display_name;
+    item.addEventListener('mousedown', () => {
+      const stop = state.stops.find(s => s.id === stopId);
+      if (stop) {
+        stop.name = r.display_name.split(',').slice(0, 2).join(',').trim();
+        stop.coord = [parseFloat(r.lat), parseFloat(r.lon)];
+        stop.state = r.address?.state || '';
+        renderStops();
+        drawStopMarkers();
+      }
+      closeSuggestions();
+    });
+    box.appendChild(item);
+  });
+  document.body.appendChild(box);
+}
+
+function closeSuggestions() {
+  const old = document.getElementById('sugBox');
+  if (old) old.remove();
+}
+
+// Each .check-pill is a <label> wrapping an <input type="checkbox">. Clicking
+// the label natively toggles the input, so we just listen for the change event
+// to sync the .on visual class — don't manually toggle the input ourselves.
+document.querySelectorAll('.check-pill').forEach(pill => {
+  const cb = pill.querySelector('input');
+  if (!cb) return;
+  cb.addEventListener('change', () => {
+    pill.classList.toggle('on', cb.checked);
+  });
+});
+function getInterests() {
+  return [...document.querySelectorAll('#interests input:checked')].map(c => c.value);
+}
+
+function makeIcon(label, color) {
+  return L.divIcon({
+    className: 'wf-marker',
+    html: `<div style="width:30px;height:30px;border:2px solid #1f2417;border-radius:50%;background:${color};color:#f4ead5;display:flex;align-items:center;justify-content:center;font-family:'DM Mono',monospace;font-size:12px;font-weight:600;box-shadow:2px 2px 0 #1f2417;">${label}</div>`,
+    iconSize: [30, 30], iconAnchor: [15, 15]
+  });
+}
+function poiIcon(emoji, color = '#4a5d3a') {
+  return L.divIcon({
+    className: 'wf-poi',
+    html: `<div style="width:26px;height:26px;border:1.5px solid #1f2417;border-radius:50%;background:${color};display:flex;align-items:center;justify-content:center;font-size:13px;box-shadow:1px 1px 0 #1f2417;">${emoji}</div>`,
+    iconSize: [26, 26], iconAnchor: [13, 13]
+  });
+}
+
+function drawStopMarkers() {
+  state.stopMarkers.forEach(m => map.removeLayer(m));
+  state.stopMarkers = [];
+  state.stops.forEach((stop, idx) => {
+    if (!stop.coord) return;
+    const isStart = idx === 0;
+    const isEnd = idx === state.stops.length - 1;
+    const color = isStart ? '#4a5d3a' : (isEnd ? '#b34727' : '#1f2417');
+    const label = String.fromCharCode(65 + idx);
+    const marker = L.marker(stop.coord, { icon: makeIcon(label, color) })
+      .bindPopup(`<b>${label}. ${stop.name}</b>`);
+    marker.addTo(map);
+    state.stopMarkers.push(marker);
+  });
+  const coords = state.stops.filter(s => s.coord).map(s => s.coord);
+  if (coords.length >= 2) map.fitBounds(coords, { padding: [60, 60] });
+  else if (coords.length === 1) map.setView(coords[0], 8);
+}
+
+// Single ORS request, returns OSRM-shape response or null on non-distance failure.
+// Throws on 400/403 with the error message so caller can decide.
+async function singleORSRoute(coords) {
+  const orsCoords = coords.map(c => [c[1], c[0]]); // ORS expects [lon, lat]
+  const res = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson', {
+    method: 'POST',
+    headers: {
+      'Authorization': KEYS.ors,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json, application/geo+json'
+    },
+    body: JSON.stringify({ coordinates: orsCoords })
+  });
+  if (!res.ok) {
+    let errMsg = `HTTP ${res.status}`;
+    try {
+      const errData = await res.json();
+      errMsg = errData?.error?.message || errData?.error?.code || JSON.stringify(errData).slice(0, 200);
+    } catch (e) {}
+    throw new Error(errMsg);
+  }
+  const data = await res.json();
+  const feature = data.features?.[0];
+  if (!feature) throw new Error('ORS returned no route');
+  const summary = feature.properties?.summary || {};
+  const segments = feature.properties?.segments || [];
+  return {
+    geometry: feature.geometry,
+    distance: summary.distance || 0,
+    duration: summary.duration || 0,
+    legs: segments.map(seg => ({ distance: seg.distance, duration: seg.duration }))
+  };
+}
+
+// Estimate straight-line distance between consecutive coords. If total exceeds
+// ~5,000 km we chunk into sub-routes that each fit within ORS free-tier limit.
+async function routeViaORSChunked(coords) {
+  // Quick straight-line total — actual driving distance will be longer
+  let straightLineKm = 0;
+  for (let i = 0; i < coords.length - 1; i++) {
+    straightLineKm += distMiles(coords[i], coords[i + 1]) * 1.60934;
+  }
+
+  // If short enough, single request
+  if (straightLineKm < 3500) {
+    return await singleORSRoute(coords);
+  }
+
+  // Otherwise chunk: greedily group waypoints into segments under ~3500km straight-line each
+  // (driving distance typically 1.2-1.4x straight line, so 3500km ≈ 4500-5000km driving — under 6000 limit)
+  const chunks = [];
+  let current = [coords[0]];
+  let runningKm = 0;
+  for (let i = 1; i < coords.length; i++) {
+    const segKm = distMiles(coords[i - 1], coords[i]) * 1.60934;
+    if (runningKm + segKm > 3500 && current.length >= 2) {
+      chunks.push(current);
+      current = [coords[i - 1]]; // overlap so segments connect
+      runningKm = 0;
+    }
+    current.push(coords[i]);
+    runningKm += segKm;
+  }
+  if (current.length >= 2) chunks.push(current);
+
+  console.log(`Long route — splitting into ${chunks.length} ORS segments`);
+
+  // Fetch each chunk and stitch together
+  const results = [];
+  for (const chunk of chunks) {
+    results.push(await singleORSRoute(chunk));
+  }
+
+  // Merge geometries (skip first coord of each subsequent segment to avoid duplicate)
+  const mergedCoords = [];
+  results.forEach((r, idx) => {
+    const c = r.geometry.coordinates;
+    mergedCoords.push(...(idx === 0 ? c : c.slice(1)));
+  });
+
+  const totalDistance = results.reduce((sum, r) => sum + r.distance, 0);
+  const totalDuration = results.reduce((sum, r) => sum + r.duration, 0);
+  const allLegs = results.flatMap(r => r.legs);
+
+  return {
+    geometry: { type: 'LineString', coordinates: mergedCoords },
+    distance: totalDistance,
+    duration: totalDuration,
+    legs: allLegs
+  };
+}
+
+async function fetchRoute(coords) {
+  const coordStr = coords.map(c => `${c[1]},${c[0]}`).join(';');
+
+  // Tier 1: OpenRouteService (requires free key, but reliable with real SLA)
+  // ORS free tier caps individual route requests at 6,000 km. For long routes
+  // (cross-country, round-trips), we chunk the waypoints into segments under
+  // ~5,500 km each and stitch them together.
+  if (KEYS.ors) {
+    try {
+      const result = await routeViaORSChunked(coords);
+      if (result) {
+        console.log('Routing succeeded via OpenRouteService');
+        return result;
+      }
+    } catch (e) {
+      console.warn('OpenRouteService threw:', e.message);
+      window._wfORSError = e.message;
+    }
+  }
+
+  // Tier 2/3: OSRM public mirrors — free but flaky
+  const endpoints = [
+    `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=false`,
+    `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson&steps=false`
+  ];
+
+  let lastErr = null;
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+      if (!res.ok) {
+        lastErr = new Error(`Server returned ${res.status}`);
+        console.warn(`Routing endpoint failed (${res.status}):`, new URL(url).hostname);
+        continue;
+      }
+      const data = await res.json();
+      if (!data.routes || !data.routes.length) {
+        lastErr = new Error('No route found');
+        continue;
+      }
+      console.log('Routing succeeded via', new URL(url).hostname);
+      return data.routes[0];
+    } catch (e) {
+      lastErr = e;
+      console.warn('Routing endpoint threw:', new URL(url).hostname, e.message);
+      continue;
+    }
+  }
+
+  let extraHint = '';
+  if (window._wfORSError) {
+    extraHint = ` OpenRouteService rejected the request: "${window._wfORSError}". For very long routes (cross-country), the free ORS tier may not cover them — try splitting into shorter trips, or this app's Inspire Me feature for trips within ~1500 mi.`;
+  } else if (!KEYS.ors) {
+    extraHint = ' Add a free OpenRouteService key in the API Keys panel for reliable routing — takes 30 seconds at openrouteservice.org/dev/#/signup.';
+  }
+  throw new Error(`Routing servers are unreachable right now (${lastErr?.message || 'network error'}).${extraHint}`);
+}
+
+const STATE_ABBR = {
+  'alabama':'AL','alaska':'AK','arizona':'AZ','arkansas':'AR','california':'CA','colorado':'CO',
+  'connecticut':'CT','delaware':'DE','florida':'FL','georgia':'GA','hawaii':'HI','idaho':'ID',
+  'illinois':'IL','indiana':'IN','iowa':'IA','kansas':'KS','kentucky':'KY','louisiana':'LA',
+  'maine':'ME','maryland':'MD','massachusetts':'MA','michigan':'MI','minnesota':'MN',
+  'mississippi':'MS','missouri':'MO','montana':'MT','nebraska':'NE','nevada':'NV',
+  'new hampshire':'NH','new jersey':'NJ','new mexico':'NM','new york':'NY',
+  'north carolina':'NC','north dakota':'ND','ohio':'OH','oklahoma':'OK','oregon':'OR',
+  'pennsylvania':'PA','rhode island':'RI','south carolina':'SC','south dakota':'SD',
+  'tennessee':'TN','texas':'TX','utah':'UT','vermont':'VT','virginia':'VA',
+  'washington':'WA','west virginia':'WV','wisconsin':'WI','wyoming':'WY'
+};
+
+async function statesAlongRoute(stops, routeGeometry) {
+  // Use known states from stops first
+  const states = new Set();
+  stops.forEach(s => {
+    if (s.state) {
+      const abbr = STATE_ABBR[s.state.toLowerCase()] || (s.state.length === 2 ? s.state.toUpperCase() : '');
+      if (abbr) states.add(abbr);
+    }
+  });
+
+  // Sample points along route to catch flyover states. Keep this minimal
+  // to stay well under Nominatim's 1 req/s rate limit.
+  const coords = routeGeometry.coordinates;
+  const samples = [];
+  const sampleCount = Math.min(3, Math.max(1, Math.floor(coords.length / 200)));
+  for (let i = 1; i <= sampleCount; i++) {
+    const idx = Math.floor((coords.length / (sampleCount + 1)) * i);
+    samples.push(coords[idx]);
+  }
+  for (const sample of samples) {
+    try {
+      const res = await rateLimitedNominatim(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${sample[1]}&lon=${sample[0]}&addressdetails=1&zoom=5`);
+      const data = await res.json();
+      const stateName = data.address?.state;
+      if (stateName) {
+        const abbr = STATE_ABBR[stateName.toLowerCase()];
+        if (abbr) states.add(abbr);
+      }
+    } catch (e) { /* skip */ }
+  }
+  return [...states];
+}
+
+async function fetchNPSParks(stateCodes) {
+  if (!KEYS.nps || !stateCodes.length) return [];
+  try {
+    const url = `https://developer.nps.gov/api/v1/parks?stateCode=${stateCodes.join(',')}&limit=200&api_key=${KEYS.nps}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.data || []).map(p => ({
+      source: 'nps',
+      parkCode: p.parkCode,
+      name: p.fullName,
+      lat: parseFloat(p.latitude),
+      lon: parseFloat(p.longitude),
+      designation: p.designation || 'NPS Site',
+      description: p.description,
+      url: p.url,
+      states: p.states,
+      activities: (p.activities || []).slice(0, 6).map(a => a.name),
+      fee: p.entranceFees?.[0]?.cost
+    })).filter(p => !isNaN(p.lat) && !isNaN(p.lon) && p.lat !== 0);
+  } catch (e) { console.warn('NPS fetch failed', e); return []; }
+}
+
+async function fetchRecGovCampgrounds(routeGeometry) {
+  if (!KEYS.ridb) return [];
+  const coords = routeGeometry.coordinates;
+  if (!coords.length) return [];
+  const samples = [];
+  const sampleCount = Math.min(5, Math.max(2, Math.floor(coords.length / 80)));
+  for (let i = 1; i <= sampleCount; i++) {
+    const idx = Math.floor((coords.length / (sampleCount + 1)) * i);
+    samples.push(coords[idx]);
+  }
+  const all = [];
+  for (const sample of samples) {
+    try {
+      const url = `https://ridb.recreation.gov/api/v1/facilities?latitude=${sample[1]}&longitude=${sample[0]}&radius=20&activity=CAMPING&limit=20&apikey=${KEYS.ridb}`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      (data.RECDATA || []).forEach(f => {
+        if (f.FacilityLatitude && f.FacilityLongitude) {
+          all.push({
+            source: 'ridb',
+            name: f.FacilityName,
+            lat: f.FacilityLatitude,
+            lon: f.FacilityLongitude,
+            description: f.FacilityDescription?.replace(/<[^>]+>/g, '').slice(0, 200),
+            url: `https://www.recreation.gov/camping/campgrounds/${f.FacilityID}`,
+            phone: f.FacilityPhone,
+            reservable: f.Reservable
+          });
+        }
+      });
+    } catch (e) { /* */ }
+  }
+  const seen = new Set();
+  return all.filter(f => {
+    const k = `${f.lat.toFixed(3)},${f.lon.toFixed(3)}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+async function fetchRedditTips(stops) {
+  const subreddits = ['roadtrip', 'NationalParks', 'CampingandHiking', 'travel'];
+  const tips = [];
+  let blockedCount = 0;
+  let totalAttempts = 0;
+  // Suppress console noise from Reddit's CORS blocks — we handle these gracefully
+  const origConsoleErr = console.error;
+  console.error = (...args) => {
+    const msg = args.join(' ');
+    if (msg.includes('reddit.com')) return;
+    origConsoleErr.apply(console, args);
+  };
+  try {
+    for (const stop of stops) {
+      if (!stop.name) continue;
+      const cityQuery = stop.name.split(',')[0].trim();
+      if (!cityQuery) continue;
+      for (const sub of subreddits) {
+        totalAttempts++;
+        try {
+          const url = `https://www.reddit.com/r/${sub}/search.json?q=${encodeURIComponent(cityQuery)}&restrict_sr=1&limit=4&sort=top&t=year`;
+          const res = await fetch(url);
+          if (!res.ok) { blockedCount++; continue; }
+          const data = await res.json();
+          (data.data?.children || []).forEach(c => {
+            const p = c.data;
+            if (p.selftext && p.selftext.length > 50) {
+              tips.push({
+                location: cityQuery, title: p.title,
+                snippet: p.selftext.replace(/\n+/g, ' ').slice(0, 220),
+                url: 'https://reddit.com' + p.permalink,
+                subreddit: sub, score: p.score
+              });
+            } else if (p.num_comments > 5) {
+              tips.push({
+                location: cityQuery, title: p.title, snippet: '',
+                url: 'https://reddit.com' + p.permalink,
+                subreddit: sub, score: p.score
+              });
+            }
+          });
+        } catch (e) { blockedCount++; }
+      }
+    }
+  } finally {
+    console.error = origConsoleErr;
+  }
+  if (blockedCount === totalAttempts && totalAttempts > 0) {
+    console.info(`Reddit blocked all ${totalAttempts} requests — likely browser tracking prevention. The deep-link buttons still work.`);
+    window._wfRedditBlocked = true;
+  }
+  const byLoc = {};
+  tips.sort((a, b) => b.score - a.score).forEach(t => {
+    if (!byLoc[t.location]) byLoc[t.location] = [];
+    if (byLoc[t.location].length < 2) byLoc[t.location].push(t);
+  });
+  return byLoc;
+}
+
+async function fetchRedditStateParks(stateCodes) {
+  const tips = [];
+  const fullStateNames = Object.entries(STATE_ABBR)
+    .filter(([, abbr]) => stateCodes.includes(abbr))
+    .map(([name]) => name);
+  for (const state of fullStateNames) {
+    try {
+      const url = `https://www.reddit.com/r/StateParks/search.json?q=${encodeURIComponent(state)}&restrict_sr=1&limit=3&sort=top&t=year`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      (data.data?.children || []).forEach(c => {
+        const p = c.data;
+        tips.push({
+          state, title: p.title,
+          snippet: (p.selftext || '').replace(/\n+/g, ' ').slice(0, 200),
+          url: 'https://reddit.com' + p.permalink,
+          score: p.score
+        });
+      });
+    } catch (e) { /* silent */ }
+  }
+  return tips.sort((a, b) => b.score - a.score).slice(0, 5);
+}
+
+async function fetchFoursquare(routeGeometry, interests) {
+  if (!KEYS.fsq) return { food: [], lodge: [] };
+  const coords = routeGeometry.coordinates;
+  if (!coords.length) return { food: [], lodge: [] };
+
+  const samples = [];
+  const sampleCount = Math.min(6, Math.max(2, Math.floor(coords.length / 80)));
+  for (let i = 1; i <= sampleCount; i++) {
+    const idx = Math.floor((coords.length / (sampleCount + 1)) * i);
+    samples.push(coords[idx]);
+  }
+
+  const wantFood = interests.includes('food');
+  const wantLodge = interests.includes('lodging');
+  if (!wantFood && !wantLodge) return { food: [], lodge: [] };
+
+  const headers = {
+    'Authorization': KEYS.fsq.startsWith('Bearer ') ? KEYS.fsq : `Bearer ${KEYS.fsq}`,
+    'Accept': 'application/json',
+    'X-Places-Api-Version': '2025-06-17'
+  };
+
+  const food = [], lodge = [];
+
+  for (const sample of samples) {
+    const ll = `${sample[1]},${sample[0]}`;
+
+    if (wantFood) {
+      try {
+        // FSQ category 13000 = Dining and Drinking parent
+        const url = `https://api.foursquare.com/v3/places/search?ll=${ll}&radius=15000&categories=13000&sort=RATING&limit=10`;
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          (data.results || []).forEach(p => {
+            if (isChain(p.name)) return;
+            if (p.chains && p.chains.length > 0) return;
+            food.push({
+              source: 'fsq', name: p.name,
+              lat: p.geocodes?.main?.latitude,
+              lon: p.geocodes?.main?.longitude,
+              category: p.categories?.[0]?.name || 'Restaurant',
+              address: p.location?.formatted_address || p.location?.locality,
+              rating: p.rating, price: p.price, fsq_id: p.fsq_id
+            });
+          });
+        }
+      } catch (e) { /* */ }
+    }
+
+    if (wantLodge) {
+      try {
+        // 19009 B&B, 19014 Hotel, 19021 Lodge
+        const url = `https://api.foursquare.com/v3/places/search?ll=${ll}&radius=15000&categories=19009,19014,19021&sort=RATING&limit=8`;
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          (data.results || []).forEach(p => {
+            if (isLodgingChain(p.name)) return;
+            if (p.chains && p.chains.length > 0) return;
+            lodge.push({
+              source: 'fsq', name: p.name,
+              lat: p.geocodes?.main?.latitude,
+              lon: p.geocodes?.main?.longitude,
+              category: p.categories?.[0]?.name || 'Lodging',
+              address: p.location?.formatted_address || p.location?.locality,
+              rating: p.rating, fsq_id: p.fsq_id
+            });
+          });
+        }
+      } catch (e) { /* */ }
+    }
+  }
+
+  const dedupe = arr => {
+    const seen = new Set();
+    return arr.filter(p => {
+      if (!p.lat || !p.lon) return false;
+      const k = `${p.lat.toFixed(3)},${p.lon.toFixed(3)}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  };
+  return { food: dedupe(food), lodge: dedupe(lodge) };
+}
+
+async function fetchPOIsAlongRoute(routeGeometry, interests) {
+  const coords = routeGeometry.coordinates;
+  if (!coords.length) return [];
+  const samples = [];
+  const sampleCount = Math.min(8, Math.max(3, Math.floor(coords.length / 50)));
+  for (let i = 1; i < sampleCount; i++) {
+    const idx = Math.floor((coords.length / sampleCount) * i);
+    samples.push(coords[idx]);
+  }
+  const queries = [];
+  if (interests.includes('scenic')) {
+    queries.push('node["tourism"="viewpoint"]');
+    queries.push('node["tourism"="attraction"]');
+  }
+  if (interests.includes('food')) {
+    queries.push('node["amenity"="restaurant"]');
+    queries.push('node["amenity"="cafe"]');
+  }
+  if (interests.includes('lodging')) {
+    queries.push('node["tourism"="hotel"]');
+    queries.push('node["tourism"="motel"]');
+    queries.push('node["tourism"="guest_house"]');
+    queries.push('node["tourism"="bed_and_breakfast"]');
+  }
+  if (interests.includes('historic')) {
+    queries.push('node["historic"]');
+  }
+  if (!queries.length) return [];
+  const radius = 15000;
+  const bboxes = samples.map(s => `(around:${radius},${s[1]},${s[0]})`);
+  const queryParts = [];
+  queries.forEach(q => bboxes.forEach(b => queryParts.push(`${q}${b};`)));
+  const overpassQuery = `[out:json][timeout:25];(${queryParts.join('')});out center 60;`;
+  try {
+    const res = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST', body: 'data=' + encodeURIComponent(overpassQuery)
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.elements || [];
+  } catch (e) { return []; }
+}
+
+// Major restaurant and lodging chains to filter out — keeps recommendations
+// focused on local independents that fit the "road trip discovery" vibe.
+const CHAIN_PATTERNS = /^(mcdonald'?s?|burger king|wendy'?s?|subway|taco bell|kfc|popeyes|chick-?fil-?a|arby'?s?|jack in the box|carl'?s? jr|hardee'?s?|sonic( drive-?in)?|whataburger|in-?n-?out|five guys|shake shack|chipotle|panera( bread)?|qdoba|moe'?s?|panda express|pizza hut|domino'?s?|papa john'?s?|little caesars|papa murphy'?s?|olive garden|red lobster|outback( steakhouse)?|texas roadhouse|longhorn( steakhouse)?|chili'?s?|applebee'?s?|tgi friday'?s?|ihop|denny'?s?|waffle house|cracker barrel|perkins|bob evans|big boy|cheesecake factory|red robin|buffalo wild wings|bww|hooters|ruby tuesday|o'?charley'?s?|golden corral|ryan'?s?|dunkin'?( donuts?)?|krispy kreme|tim hortons|starbucks|peet'?s? coffee|caribou coffee|dutch bros|7-?eleven|circle k|wawa|sheetz|buc-?ee'?s?|love'?s?( travel stops?)?|pilot|flying j|ta travel|kwik trip|casey'?s?|walgreens|cvs|rite aid|baskin-?robbins|dairy queen|dq|cold stone|ben & jerry'?s?|menchie'?s?|orange julius|auntie anne'?s?|cinnabon|jamba juice|smoothie king|tropical smoothie|jersey mike'?s?|firehouse subs|jimmy john'?s?|potbelly|quizno'?s?|charley'?s? philly steaks|del taco|el pollo loco|rubio'?s?|baja fresh|wingstop|raising cane'?s?|zaxby'?s?|bojangles|church'?s? chicken)\b/i;
+
+const LODGING_CHAIN_PATTERNS = /^(holiday inn|hampton( inn)?|hilton( garden)?|hyatt|marriott|courtyard|fairfield|residence inn|spring ?hill|townplace|ac hotel|moxy|aloft|four points|sheraton|westin|w hotels?|st\.? regis|le m[eé]ridien|element|tribute|delta|gaylord|protea|renaissance|ritz-?carlton|edition|autograph|bonvoy|best western|days inn|super 8|comfort( inn| suites)?|quality inn|sleep inn|rodeway|econo lodge|mainstay|suburban|microtel|wingate|wyndham|baymont|la quinta|tryp|americinn|red roof|motel 6|studio 6|extended stay|home2|homewood|embassy suites|doubletree|tru by hilton|tapestry|curio|canopy|conrad|waldorf|signia|hilton vacation|drury|country inn|radisson|park inn|park plaza|country hearth|knights inn|travelodge|howard johnson|hojo|crowne plaza|candlewood|staybridge|avid|atwell|voco|kimpton|even hotels?|intercontinental|six senses|regent|vignette|hotel indigo|holiday inn club|garner|iberostar|melia|sol|paradisus|me by melia|innside|gran melia|circle|nh hotels?|nh collection|nhow|cocoon|disney|red lion|hotel rl|guesthouse inn|signature inn|leonardo|magnolia|sandman|jolly|mercure|ibis|novotel|sofitel|pullman|m gallery|swiss[oô]tel|raffles|fairmont|orient express|movenpick|grand mercure|tribe|the social hub|houtel|jo&joe|adagio|airelles|relais & ch[aâ]teaux|small luxury|leading hotels?|design hotels?|preferred hotels?|virtuoso|ascend|cambria|ascend collection|treebo|ginger|fabhotels|oyo|red planet|tune hotels?|airy|reddoorz|nida rooms?|zen rooms?|favehotel|amaris|whiz|harris|pop hotels?|all season|formule 1)\b/i;
+
+function isChain(name) {
+  if (!name) return false;
+  return CHAIN_PATTERNS.test(name);
+}
+function isLodgingChain(name) {
+  if (!name) return false;
+  return LODGING_CHAIN_PATTERNS.test(name);
+}
+
+function classifyOSM(el) {
+  const t = el.tags || {};
+  // Filter out chain restaurants/cafes and chain hotels/motels at the source
+  if (t.amenity === 'restaurant' || t.amenity === 'cafe' || t.amenity === 'fast_food') {
+    if (isChain(t.name) || t.brand) return null; // brand tag = chain, by OSM convention
+  }
+  if (t.tourism === 'hotel' || t.tourism === 'motel') {
+    if (isLodgingChain(t.name) || t.brand) return null;
+  }
+  if (t.tourism === 'viewpoint') return { kind: 'view', icon: '👁', color: '#d4a017', label: 'Viewpoint' };
+  if (t.tourism === 'attraction') return { kind: 'attr', icon: '★', color: '#d4a017', label: 'Attraction' };
+  if (t.amenity === 'restaurant') {
+    const cuisine = t.cuisine ? ` · ${t.cuisine.replace(/_/g, ' ').replace(/;/g, ', ')}` : '';
+    return { kind: 'food', icon: '🍴', color: '#b34727', label: `Restaurant${cuisine}` };
+  }
+  if (t.amenity === 'cafe') return { kind: 'food', icon: '☕', color: '#b34727', label: 'Café' };
+  if (t.tourism === 'hotel') return { kind: 'lodge', icon: '🛏', color: '#1f2417', label: 'Hotel' };
+  if (t.tourism === 'motel') return { kind: 'lodge', icon: '🛏', color: '#1f2417', label: 'Motel' };
+  if (t.tourism === 'guest_house') return { kind: 'lodge', icon: '🏠', color: '#1f2417', label: 'Guesthouse' };
+  if (t.tourism === 'bed_and_breakfast') return { kind: 'lodge', icon: '🏡', color: '#1f2417', label: 'Bed & Breakfast' };
+  if (t.historic) return { kind: 'hist', icon: '⚑', color: '#8a3319', label: 'Historic' };
+  return null;
+}
+
+const STATE_PARK_SITES = {
+  'AL':'https://www.alapark.com','AK':'https://dnr.alaska.gov/parks/','AZ':'https://azstateparks.com',
+  'AR':'https://www.arkansasstateparks.com','CA':'https://www.parks.ca.gov','CO':'https://cpw.state.co.us/placestogo',
+  'CT':'https://portal.ct.gov/DEEP/State-Parks/State-Parks','DE':'https://destateparks.com','FL':'https://www.floridastateparks.org',
+  'GA':'https://gastateparks.org','HI':'https://dlnr.hawaii.gov/dsp/','ID':'https://parksandrecreation.idaho.gov',
+  'IL':'https://dnr.illinois.gov/parks.html','IN':'https://www.in.gov/dnr/state-parks/','IA':'https://www.iowadnr.gov/places-to-go/state-parks',
+  'KS':'https://ksoutdoors.com/State-Parks','KY':'https://parks.ky.gov','LA':'https://www.lastateparks.com',
+  'ME':'https://www.maine.gov/dacf/parks/','MD':'https://dnr.maryland.gov/publiclands/','MA':'https://www.mass.gov/state-parks',
+  'MI':'https://www.michigan.gov/dnr/places/state-parks','MN':'https://www.dnr.state.mn.us/state_parks/','MS':'https://www.mdwfp.com/parks-destinations/',
+  'MO':'https://mostateparks.com','MT':'https://stateparks.mt.gov','NE':'https://outdoornebraska.gov',
+  'NV':'https://parks.nv.gov','NH':'https://www.nhstateparks.org','NJ':'https://www.nj.gov/dep/parksandforests/',
+  'NM':'https://www.emnrd.nm.gov/spd/','NY':'https://parks.ny.gov','NC':'https://www.ncparks.gov',
+  'ND':'https://www.parkrec.nd.gov','OH':'https://ohiodnr.gov/go-and-do/plan-a-visit','OK':'https://www.travelok.com/state-parks',
+  'OR':'https://stateparks.oregon.gov','PA':'https://www.dcnr.pa.gov/StateParks/','RI':'https://riparks.ri.gov',
+  'SC':'https://southcarolinaparks.com','SD':'https://gfp.sd.gov/parks/','TN':'https://tnstateparks.com',
+  'TX':'https://tpwd.texas.gov/state-parks','UT':'https://stateparks.utah.gov','VT':'https://vtstateparks.com',
+  'VA':'https://www.dcr.virginia.gov/state-parks/','WA':'https://parks.wa.gov','WV':'https://wvstateparks.com',
+  'WI':'https://dnr.wisconsin.gov/topic/parks','WY':'https://wyoparks.wyo.gov'
+};
+
+// Reverse-geocode a [lat, lon] to a "City, State" string. Returns null if no settlement found.
+// Validate that a coordinate is on land (and on a road, approximately) by checking
+// it reverse-geocodes to a real address. Returns true if valid, false if water/border/null.
+// Verify a coordinate is routable by asking ORS to snap it to the nearest road.
+// Returns true if there's a road within ~5km (catches ocean coords, deep wilderness).
+async function isCoordRoutableORS(coord) {
+  if (!KEYS.ors) return true; // Without ORS we can't pre-validate; trust other checks
+  try {
+    const res = await fetch('https://api.openrouteservice.org/v2/snap/driving-car/geojson', {
+      method: 'POST',
+      headers: {
+        'Authorization': KEYS.ors,
+        'Content-Type': 'application/json',
+        'Accept': 'application/json, application/geo+json'
+      },
+      body: JSON.stringify({
+        locations: [[coord[1], coord[0]]], // ORS = [lon, lat]
+        radius: 5000
+      })
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    // ORS snap returns features with snapped coords if successful, null otherwise
+    return !!(data.features?.[0] && data.features[0].geometry);
+  } catch (e) { return false; }
+}
+
+async function isCoordRoutable(coord) {
+  try {
+    const res = await rateLimitedNominatim(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coord[0]}&lon=${coord[1]}&addressdetails=1&zoom=10`);
+    if (!res.ok) return false;
+    const data = await res.json();
+    // A routable land point will have at least a country and usually a state/county
+    if (!data.address) return false;
+    if (data.error) return false;
+    // Reject if no settlement, county, or state — likely water
+    return !!(data.address.country && (data.address.state || data.address.county || data.address.city || data.address.town || data.address.village));
+  } catch (e) { return false; }
+}
+
+async function reverseGeocodeCity(coord) {
+  try {
+    const res = await rateLimitedNominatim(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${coord[0]}&lon=${coord[1]}&addressdetails=1&zoom=10`);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const town = data.address?.city || data.address?.town || data.address?.village || data.address?.county;
+    const state = data.address?.state;
+    if (!town) return null;
+    return state ? `${town}, ${state}` : town;
+  } catch (e) { return null; }
+}
+
+function distMiles(a, b) {
+  const R = 3958.8;
+  const dLat = (b[0] - a[0]) * Math.PI / 180;
+  const dLon = (b[1] - a[1]) * Math.PI / 180;
+  const lat1 = a[0] * Math.PI / 180;
+  const lat2 = b[0] * Math.PI / 180;
+  const x = Math.sin(dLat/2) ** 2 + Math.sin(dLon/2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  return 2 * R * Math.asin(Math.sqrt(x));
+}
+
+// Escape user-content / 3rd-party-content for safe HTML insertion
+function esc(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function distToRoute(point, routeCoords) {
+  let min = Infinity;
+  for (let i = 0; i < routeCoords.length; i += 5) {
+    const d = distMiles([point.lat, point.lon], [routeCoords[i][1], routeCoords[i][0]]);
+    if (d < min) min = d;
+  }
+  return min;
+}
+
+function tripAdvisorSearchURL(name, locality) {
+  const q = encodeURIComponent(`${name} ${locality || ''}`.trim());
+  return `https://www.tripadvisor.com/Search?q=${q}`;
+}
+function redditSearchURL(name) {
+  return `https://www.reddit.com/search/?q=${encodeURIComponent(name)}&sort=top`;
+}
+
+function splitIntoDays(legs, hoursPerDay, routeGeometry) {
+  // First pass: split any single leg longer than hoursPerDay into virtual sub-legs
+  // using the route geometry to interpolate intermediate stop coordinates.
+  const expandedLegs = [];
+  const routeCoords = routeGeometry?.coordinates || [];
+
+  legs.forEach(leg => {
+    const legHours = leg.duration / 3600;
+    if (legHours <= hoursPerDay || routeCoords.length < 4) {
+      expandedLegs.push(leg);
+      return;
+    }
+    // Need to split this leg into multiple days.
+    const numSubLegs = Math.ceil(legHours / hoursPerDay);
+    const subDuration = leg.duration / numSubLegs;
+    const subDistance = leg.distance / numSubLegs;
+
+    // Find the indices in routeCoords closest to leg.from and leg.to
+    let fromIdx = 0, toIdx = routeCoords.length - 1;
+    let minFromD = Infinity, minToD = Infinity;
+    for (let i = 0; i < routeCoords.length; i++) {
+      const c = routeCoords[i]; // [lon, lat]
+      const dFrom = Math.hypot(c[1] - leg.from.coord[0], c[0] - leg.from.coord[1]);
+      const dTo = Math.hypot(c[1] - leg.to.coord[0], c[0] - leg.to.coord[1]);
+      if (dFrom < minFromD) { minFromD = dFrom; fromIdx = i; }
+      if (dTo < minToD) { minToD = dTo; toIdx = i; }
+    }
+    if (toIdx < fromIdx) [fromIdx, toIdx] = [toIdx, fromIdx];
+
+    let prev = leg.from;
+    for (let i = 1; i < numSubLegs; i++) {
+      const t = i / numSubLegs;
+      const idx = Math.floor(fromIdx + (toIdx - fromIdx) * t);
+      const coord = routeCoords[idx];
+      // Generate a friendly waypoint label using reverse geocoding-free fallback
+      const waypoint = {
+        coord: [coord[1], coord[0]],
+        name: `Overnight Stop ${i}`,
+        isOvernight: true
+      };
+      expandedLegs.push({
+        from: prev, to: waypoint,
+        distance: subDistance, duration: subDuration
+      });
+      prev = waypoint;
+    }
+    expandedLegs.push({
+      from: prev, to: leg.to,
+      distance: subDistance, duration: subDuration
+    });
+  });
+
+  // Second pass: greedy bin-pack into days
+  const days = [];
+  let current = { stops: [expandedLegs[0].from], hours: 0, miles: 0 };
+  expandedLegs.forEach(leg => {
+    const legHours = leg.duration / 3600;
+    if (current.hours + legHours > hoursPerDay && current.stops.length > 1) {
+      days.push(current);
+      current = { stops: [leg.from], hours: 0, miles: 0 };
+    }
+    current.stops.push(leg.to);
+    current.hours += legHours;
+    current.miles += leg.distance / 1609.34;
+  });
+  if (current.stops.length > 1) days.push(current);
+  return days;
+}
+
+// Reverse-geocode an overnight waypoint to give it a real city name
+async function nameOvernightStops(days) {
+  const allStops = days.flatMap(d => d.stops);
+  const overnights = allStops.filter(s => s.isOvernight);
+  // Dedupe by coord
+  const seen = new Set();
+  const unique = overnights.filter(s => {
+    const k = `${s.coord[0].toFixed(2)},${s.coord[1].toFixed(2)}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  await Promise.all(unique.map(async s => {
+    try {
+      const res = await rateLimitedNominatim(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${s.coord[0]}&lon=${s.coord[1]}&addressdetails=1&zoom=10`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const town = data.address?.city || data.address?.town || data.address?.village || data.address?.county;
+      const state = data.address?.state;
+      if (town) {
+        // Update all references to this overnight stop
+        overnights.forEach(o => {
+          if (Math.abs(o.coord[0] - s.coord[0]) < 0.01 && Math.abs(o.coord[1] - s.coord[1]) < 0.01) {
+            o.name = state ? `${town}, ${state}` : town;
+          }
+        });
+      }
+    } catch (e) { /* keep default name */ }
+  }));
+}
+
+function setLoading(text, sub) {
+  document.querySelector('.loading-title').textContent = text;
+  document.getElementById('loadingSub').textContent = sub;
+}
+
+async function planTrip() {
+  const errBox = document.getElementById('errorBox');
+  errBox.innerHTML = '';
+  window._wfRedditBlocked = false;
+  window._wfORSError = null;
+
+  // Detect file:// — most fetch APIs reject null-origin requests
+  if (location.protocol === 'file:') {
+    errBox.innerHTML = `<div class="error" style="text-transform:none;letter-spacing:0.04em;font-size:13px;line-height:1.5;font-family:'Fraunces',serif;">
+      <strong style="font-family:'DM Mono',monospace;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;">Heads up — file:// won't work</strong><br/><br/>
+      Most APIs (routing, parks, Reddit) block requests from local files. Run a quick local server instead:<br/><br/>
+      <code style="background:rgba(0,0,0,0.2);padding:2px 6px;display:inline-block;">python3 -m http.server 8000</code><br/>
+      <span style="opacity:0.85;">then open http://localhost:8000</span><br/><br/>
+      Or host on GitHub Pages, Netlify, etc. — anything served over http(s) works.
+    </div>`;
+    return;
+  }
+
+  let validStops = state.stops.filter(s => s.coord);
+  if (validStops.length < 2) {
+    errBox.innerHTML = `<div class="error">Pick at least a start &amp; end (use the dropdown suggestions)</div>`;
+    return;
+  }
+
+  // Round Trip / Grand Loop logic
+  const isRoundTrip = document.getElementById('roundTrip').checked;
+  const isGrandLoop = document.getElementById('grandLoop').checked;
+  let loopWaypoint = null;
+
+  if (isGrandLoop) {
+    // Generate a multi-region perimeter trip
+    const start = validStops[0].coord;
+    const finalDest = validStops[validStops.length - 1].coord;
+    const anchors = pickGrandLoopAnchors(start, finalDest, validStops.length === 2 && start[0] === finalDest[0] && start[1] === finalDest[1]);
+
+    setLoading('Building grand loop', `Routing through ${anchors.length} regions`);
+
+    if (validStops.length === 2 && start[0] === finalDest[0] && start[1] === finalDest[1]) {
+      // Same start/end — anchors form the full loop
+      validStops = [validStops[0], ...anchors.map(a => ({ coord: a.coord, name: a.name, isLoopWaypoint: true })),
+                    { ...validStops[0], name: validStops[0].name + ' (return)', isReturn: true }];
+    } else {
+      // Insert anchors between start and end
+      const inserted = anchors.map(a => ({ coord: a.coord, name: a.name, isLoopWaypoint: true }));
+      validStops = [validStops[0], ...inserted, validStops[validStops.length - 1]];
+      if (isRoundTrip) {
+        validStops.push({ ...validStops[0], name: validStops[0].name + ' (return)', isReturn: true });
+      }
+    }
+  } else if (isRoundTrip) {
+    // Original perpendicular-loop logic for simple round-trips
+    const first = validStops[0].coord;
+    const last = validStops[validStops.length - 1].coord;
+    const midLat = (first[0] + last[0]) / 2;
+    const midLon = (first[1] + last[1]) / 2;
+    const dLat = last[0] - first[0];
+    const dLon = last[1] - first[1];
+    const routeLen = Math.hypot(dLat, dLon);
+
+    setLoading('Plotting the loop', 'Finding a scenic way home');
+
+    const candidates = [];
+    for (const mag of [0.25, 0.18, 0.32, 0.4]) {
+      const offsetMag = routeLen * mag;
+      const perpLat = -dLon / routeLen * offsetMag;
+      const perpLon = dLat / routeLen * offsetMag;
+      candidates.push([midLat + perpLat, midLon + perpLon]);
+      candidates.push([midLat - perpLat, midLon - perpLon]);
+    }
+
+    const inUS = c => c[0] > 24 && c[0] < 49 && c[1] > -125 && c[1] < -67;
+    const usCandidates = candidates.filter(inUS);
+    console.log(`[loop] generated ${candidates.length} candidates, ${usCandidates.length} in US bounds`);
+
+    let chosen = null;
+    for (const c of usCandidates) {
+      const cityName = await reverseGeocodeCity(c);
+      if (!cityName) {
+        console.log(`[loop] candidate (${c[0].toFixed(2)}, ${c[1].toFixed(2)}) → no city, skip`);
+        continue;
+      }
+      // Double-check with ORS that this coord is actually near a road
+      const routable = await isCoordRoutableORS(c);
+      console.log(`[loop] candidate (${c[0].toFixed(2)}, ${c[1].toFixed(2)}) → ${cityName} ${routable ? '✓ routable' : '✗ not routable'}`);
+      if (routable) {
+        chosen = { coord: c, name: cityName };
+        break;
+      }
+    }
+    console.log('[loop] chose:', chosen?.name || '(none — falling back to retrace)');
+
+    if (chosen) {
+      loopWaypoint = {
+        coord: chosen.coord,
+        name: chosen.name + ' (loop)',
+        isLoopWaypoint: true
+      };
+      validStops.push(loopWaypoint);
+      validStops.push({
+        ...validStops[0],
+        name: validStops[0].name + ' (return)',
+        isReturn: true
+      });
+    } else {
+      validStops.push({
+        ...validStops[0],
+        name: validStops[0].name + ' (return)',
+        isReturn: true
+      });
+    }
+  }
+
+  const days = parseInt(document.getElementById('days').value) || 5;
+  const hoursPerDay = parseInt(document.getElementById('hoursPerDay').value);
+  const interests = getInterests();
+  document.getElementById('loading').classList.add('show');
+  document.getElementById('planBtn').disabled = true;
+
+  try {
+    setLoading('Plotting course', 'Calculating roads & drive times');
+    const coords = validStops.map(s => s.coord);
+    const route = await fetchRoute(coords);
+    const routeCoords = route.geometry.coordinates;
+
+    state.routeLayer.clearLayers();
+    state.poiLayer.clearLayers();
+    L.geoJSON(route.geometry, { style: { color: '#1f2417', weight: 6, opacity: 0.25 } }).addTo(state.routeLayer);
+    L.geoJSON(route.geometry, { style: { color: '#b34727', weight: 4, opacity: 0.85 } }).addTo(state.routeLayer);
+
+    setLoading('Querying archives', 'NPS, Recreation.gov, Reddit, OpenStreetMap');
+    const stateCodes = await statesAlongRoute(validStops, route.geometry);
+
+    const [npsParks, recGov, redditByStop, redditStatePark, osmPois, fsqData] = await Promise.all([
+      interests.includes('national_park') ? fetchNPSParks(stateCodes) : Promise.resolve([]),
+      interests.includes('campground') ? fetchRecGovCampgrounds(route.geometry) : Promise.resolve([]),
+      interests.includes('reddit') ? fetchRedditTips(validStops) : Promise.resolve({}),
+      interests.includes('reddit') && interests.includes('state_park') ? fetchRedditStateParks(stateCodes) : Promise.resolve([]),
+      fetchPOIsAlongRoute(route.geometry, interests),
+      fetchFoursquare(route.geometry, interests)
+    ]);
+
+    setLoading('Curating stops', 'Filtering by route proximity');
+    const nearbyNPS = npsParks.filter(p => distToRoute(p, routeCoords) < 50);
+
+    const legs = [];
+    const totalDist = route.distance || 0;
+    const totalDur = route.duration || 0;
+    for (let i = 0; i < validStops.length - 1; i++) {
+      const osrmLeg = route.legs?.[i];
+      legs.push({
+        from: validStops[i], to: validStops[i + 1],
+        distance: osrmLeg?.distance || (totalDist / (validStops.length - 1)),
+        duration: osrmLeg?.duration || (totalDur / (validStops.length - 1))
+      });
+    }
+
+    let dayPlan = splitIntoDays(legs, hoursPerDay, route.geometry);
+
+    // Reverse-geocode any overnight stops to give them real town names
+    setLoading('Naming overnight stops', 'Reverse-geocoding waypoints');
+    await nameOvernightStops(dayPlan);
+
+    while (dayPlan.length > days) {
+      let minIdx = 0;
+      for (let i = 1; i < dayPlan.length; i++) {
+        if (dayPlan[i].hours < dayPlan[minIdx].hours) minIdx = i;
+      }
+      const mergeWith = minIdx < dayPlan.length - 1 ? minIdx + 1 : minIdx - 1;
+      const a = Math.min(minIdx, mergeWith);
+      const b = Math.max(minIdx, mergeWith);
+      dayPlan[a].stops = dayPlan[a].stops.concat(dayPlan[b].stops.slice(1));
+      dayPlan[a].hours += dayPlan[b].hours;
+      dayPlan[a].miles += dayPlan[b].miles;
+      dayPlan.splice(b, 1);
+    }
+
+    dayPlan.forEach(day => {
+      const distToDay = (lat, lon) => {
+        let min = Infinity;
+        day.stops.forEach(s => {
+          if (!s.coord) return;
+          const d = distMiles(s.coord, [lat, lon]);
+          if (d < min) min = d;
+        });
+        return min;
+      };
+
+      const npsForDay = nearbyNPS
+        .map(p => ({ ...p, _d: distToDay(p.lat, p.lon) }))
+        .filter(p => p._d < 60)
+        .sort((a, b) => a._d - b._d)
+        .slice(0, 3);
+
+      const campsForDay = recGov
+        .map(c => ({ ...c, _d: distToDay(c.lat, c.lon) }))
+        .filter(c => c._d < 50)
+        .sort((a, b) => a._d - b._d)
+        .slice(0, 2);
+
+      const osmForDay = (osmPois || [])
+        .map(el => {
+          const lat = el.lat || el.center?.lat;
+          const lon = el.lon || el.center?.lon;
+          if (!lat || !lon || !el.tags?.name) return null;
+          const c = classifyOSM(el);
+          if (!c) return null; // chain filter returns null
+          return { source: 'osm', name: el.tags.name, lat, lon, classified: c, _d: distToDay(lat, lon) };
+        })
+        .filter(Boolean)
+        .filter(p => p._d < 40)
+        .sort((a, b) => a._d - b._d);
+
+      // Foursquare picks for this day (food + lodge, sorted by FSQ rating, filtered by route distance)
+      const fsqFoodForDay = (fsqData.food || [])
+        .map(p => ({ ...p, _d: distToDay(p.lat, p.lon) }))
+        .filter(p => p._d < 40)
+        .sort((a, b) => (b.rating || 0) - (a.rating || 0) || a._d - b._d);
+
+      const fsqLodgeForDay = (fsqData.lodge || [])
+        .map(p => ({ ...p, _d: distToDay(p.lat, p.lon) }))
+        .filter(p => p._d < 40)
+        .sort((a, b) => (b.rating || 0) - (a.rating || 0) || a._d - b._d);
+
+      const picks = { parks: npsForDay, camps: campsForDay, food: [], scenic: [], lodge: [], historic: [] };
+
+      // Prefer Foursquare for food when available (better data, already chain-free)
+      if (fsqFoodForDay.length) {
+        picks.food = fsqFoodForDay.slice(0, 2).map(p => ({
+          ...p,
+          classified: { kind: 'food', icon: '🍴', color: '#b34727', label: p.category }
+        }));
+      }
+      // Same for lodging
+      if (fsqLodgeForDay.length) {
+        picks.lodge = fsqLodgeForDay.slice(0, 2).map(p => ({
+          ...p,
+          classified: { kind: 'lodge', icon: '🛏', color: '#1f2417', label: p.category }
+        }));
+      }
+
+      // OSM fills in scenic/historic always, and food/lodge if FSQ didn't supply
+      osmForDay.forEach(p => {
+        const k = p.classified.kind;
+        if (k === 'food' && picks.food.length < 2) picks.food.push(p);
+        else if ((k === 'view' || k === 'attr') && picks.scenic.length < 2) picks.scenic.push(p);
+        else if (k === 'lodge' && picks.lodge.length < 2) picks.lodge.push(p);
+        else if (k === 'hist' && picks.historic.length < 1) picks.historic.push(p);
+      });
+
+      day.redditTips = [];
+      day.stops.forEach(s => {
+        const cityKey = s.name?.split(',')[0].trim();
+        if (cityKey && redditByStop[cityKey]) {
+          day.redditTips.push(...redditByStop[cityKey]);
+        }
+      });
+      const seenUrls = new Set();
+      day.redditTips = day.redditTips.filter(t => {
+        if (seenUrls.has(t.url)) return false;
+        seenUrls.add(t.url); return true;
+      }).slice(0, 3);
+
+      day.picks = picks;
+    });
+
+    const placedKeys = new Set();
+    const placeMarker = (lat, lon, emoji, color, popupHTML) => {
+      const k = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+      if (placedKeys.has(k)) return;
+      placedKeys.add(k);
+      L.marker([lat, lon], { icon: poiIcon(emoji, color) })
+        .bindPopup(popupHTML)
+        .addTo(state.poiLayer);
+    };
+
+    dayPlan.forEach(d => {
+      d.picks.parks.forEach(p => placeMarker(p.lat, p.lon, '🏞', '#4a5d3a',
+        `<b>${esc(p.name)}</b><br/>${esc(p.designation)}<br/><a href="${esc(p.url)}" target="_blank" rel="noopener">NPS Site →</a>`));
+      d.picks.camps.forEach(c => placeMarker(c.lat, c.lon, '⛺', '#6e8054',
+        `<b>${esc(c.name)}</b><br/>Campground<br/><a href="${esc(c.url)}" target="_blank" rel="noopener">Reserve →</a>`));
+      d.picks.scenic.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
+        `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
+      d.picks.food.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
+        `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
+      d.picks.lodge.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
+        `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
+      d.picks.historic.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
+        `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
+    });
+
+    setLoading('Rendering', 'Almost there');
+    renderResults(route, dayPlan, validStops, stateCodes, redditStatePark);
+    drawStopMarkers();
+
+    // Fit map to the entire route geometry, not just the user's stops
+    const allRouteCoords = route.geometry.coordinates.map(c => [c[1], c[0]]);
+    if (allRouteCoords.length) {
+      map.fitBounds(allRouteCoords, { padding: [60, 60] });
+    }
+
+  } catch (err) {
+    console.error(err);
+    errBox.innerHTML = `<div class="error">${err.message || 'Something went sideways. Try again.'}</div>`;
+  } finally {
+    document.getElementById('loading').classList.remove('show');
+    document.getElementById('planBtn').disabled = false;
+  }
+}
+
+function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) {
+  const totalMiles = (route.distance / 1609.34).toFixed(0);
+  const totalHours = (route.duration / 3600).toFixed(1);
+  let html = `
+    <div class="summary">
+      <div class="summary-row"><span class="label">Total Distance</span><span class="val">${totalMiles} mi</span></div>
+      <div class="summary-row"><span class="label">Driving Time</span><span class="val">${totalHours} hrs</span></div>
+      <div class="summary-row"><span class="label">Days Planned</span><span class="val">${dayPlan.length}</span></div>
+      <div class="summary-row"><span class="label">States Crossed</span><span class="val">${stateCodes.join(' · ') || '—'}</span></div>
+    </div>
+  `;
+
+  const sources = [];
+  sources.push(KEYS.ors ? 'ORS Routing ✓' : 'OSRM (free)');
+  sources.push(KEYS.nps ? 'NPS ✓' : 'NPS — add key');
+  sources.push(KEYS.ridb ? 'Rec.gov ✓' : 'Rec.gov — add key');
+  sources.push(KEYS.fsq ? 'Foursquare ✓' : 'Foursquare — add key');
+  sources.push(window._wfRedditBlocked ? 'Reddit — blocked by browser' : 'Reddit ✓');
+  sources.push('OSM (chain-filtered) ✓');
+  html += `<div style="font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.18em;opacity:0.6;margin-bottom:18px;">
+    Data: ${sources.join(' · ')}
+  </div>`;
+
+  if (window._wfRedditBlocked) {
+    html += `<div style="background:var(--paper);border:1.5px solid var(--ink);border-left:4px solid var(--sun);padding:10px 14px;margin-bottom:18px;font-size:12px;line-height:1.5;">
+      <strong style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.18em;text-transform:uppercase;">Reddit blocked</strong><br/>
+      Edge's Tracking Prevention is blocking Reddit's API. Use the <em>Reddit</em> buttons on each pick to search manually, or lower Tracking Prevention to "Basic" in Edge settings → Privacy.
+    </div>`;
+  }
+
+  dayPlan.forEach((day, idx) => {
+    const routeHTML = day.stops.map(s => esc(s.name?.split(',')[0] || '?')).join('<span class="arrow">→</span>');
+    let body = `<div class="day-route">${routeHTML}</div>`;
+
+    if (day.picks.parks.length) {
+      body += `<div class="day-section"><div class="day-section-label">National Park Service</div>`;
+      day.picks.parks.forEach(p => {
+        const desc = p.description ? esc(p.description.slice(0, 180)) + (p.description.length > 180 ? '…' : '') : '';
+        const acts = p.activities?.length ? esc(p.activities.join(', ')) : '';
+        body += `<div class="pick">
+          <div class="pick-icon">🏞</div>
+          <div class="pick-text">
+            <div class="pick-name"><a href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.name)}</a></div>
+            <div class="pick-meta">${esc(p.designation)}${p._d ? ' · ' + p._d.toFixed(0) + ' mi off route' : ''}</div>
+            ${desc ? `<div class="pick-detail">${desc}</div>` : ''}
+            ${acts ? `<div class="pick-detail" style="opacity:0.7;font-size:12px;">${acts}</div>` : ''}
+            <div class="pick-links">
+              <a class="pick-link" href="${esc(p.url)}" target="_blank" rel="noopener">NPS.gov</a>
+              <a class="pick-link reddit" href="${redditSearchURL(p.name)}" target="_blank" rel="noopener">Reddit</a>
+              <a class="pick-link tripadv" href="${tripAdvisorSearchURL(p.name)}" target="_blank" rel="noopener">TripAdvisor</a>
+            </div>
+          </div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
+    if (day.picks.camps.length) {
+      body += `<div class="day-section"><div class="day-section-label">Campgrounds (Recreation.gov)</div>`;
+      day.picks.camps.forEach(c => {
+        const desc = c.description ? esc(c.description.slice(0, 160)) + (c.description.length > 160 ? '…' : '') : '';
+        body += `<div class="pick">
+          <div class="pick-icon">⛺</div>
+          <div class="pick-text">
+            <div class="pick-name"><a href="${esc(c.url)}" target="_blank" rel="noopener">${esc(c.name)}</a></div>
+            <div class="pick-meta">${c.reservable ? 'Reservable' : 'First-come'}${c._d ? ' · ' + c._d.toFixed(0) + ' mi off route' : ''}</div>
+            ${desc ? `<div class="pick-detail">${desc}</div>` : ''}
+            <div class="pick-links">
+              <a class="pick-link" href="${esc(c.url)}" target="_blank" rel="noopener">Reserve</a>
+              <a class="pick-link reddit" href="${redditSearchURL(c.name)}" target="_blank" rel="noopener">Reddit</a>
+            </div>
+          </div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
+    const others = [...day.picks.scenic, ...day.picks.food, ...day.picks.lodge, ...day.picks.historic];
+    if (others.length) {
+      body += `<div class="day-section"><div class="day-section-label">Along the Way</div>`;
+      others.forEach(p => {
+        const rating = p.rating ? `<span style="background:var(--moss);color:var(--cream);padding:1px 6px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;margin-left:6px;">${p.rating.toFixed(1)}</span>` : '';
+        const price = p.price ? '<span style="opacity:0.6;margin-left:4px;">' + '$'.repeat(p.price) + '</span>' : '';
+        const addr = p.address ? `<div class="pick-detail" style="font-size:12px;">${esc(p.address)}</div>` : '';
+        body += `<div class="pick">
+          <div class="pick-icon">${p.classified.icon}</div>
+          <div class="pick-text">
+            <div class="pick-name">${esc(p.name)}${rating}${price}</div>
+            <div class="pick-meta">${esc(p.classified.label)}${p._d ? ' · ' + p._d.toFixed(0) + ' mi off route' : ''}${p.source === 'fsq' ? ' · foursquare' : ''}</div>
+            ${addr}
+            <div class="pick-links">
+              <a class="pick-link reddit" href="${redditSearchURL(p.name)}" target="_blank" rel="noopener">Reddit</a>
+              <a class="pick-link tripadv" href="${tripAdvisorSearchURL(p.name)}" target="_blank" rel="noopener">TripAdvisor</a>
+            </div>
+          </div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
+    if (day.redditTips?.length) {
+      body += `<div class="day-section"><div class="day-section-label">Reddit Travelers Said…</div>`;
+      day.redditTips.forEach(t => {
+        body += `<div class="reddit-quote">
+          <div style="font-weight:600;font-style:normal;margin-bottom:4px;">${esc(t.title)}</div>
+          ${t.snippet ? esc(t.snippet) + '…' : '<span style="opacity:0.7;">Discussion thread →</span>'}
+          <span class="meta">r/${esc(t.subreddit)} · ${t.score} upvotes · <a href="${esc(t.url)}" target="_blank" rel="noopener" style="color:var(--rust);">read on reddit</a></span>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
+    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !day.redditTips?.length) {
+      body += `<div style="font-style:italic;opacity:0.55;font-size:13px;padding:10px 0;">No specific picks for this stretch — try widening your interests, or add API keys for better park data.</div>`;
+    }
+
+    html += `<div class="day-card">
+      <div class="day-header">
+        <span class="day-num">Day ${idx + 1}</span>
+        <span class="day-stat">${day.miles.toFixed(0)} mi · ${day.hours.toFixed(1)} hrs</span>
+      </div>
+      <div class="day-body">${body}</div>
+    </div>`;
+  });
+
+  if (stateCodes.length) {
+    html += `<div class="day-card" style="background:var(--paper);">
+      <div class="day-header" style="background:var(--moss);">
+        <span class="day-num">State Parks</span>
+        <span class="day-stat">${stateCodes.length} state${stateCodes.length > 1 ? 's' : ''} on route</span>
+      </div>
+      <div class="day-body">`;
+
+    stateCodes.forEach(code => {
+      const url = STATE_PARK_SITES[code];
+      if (url) {
+        html += `<div class="pick">
+          <div class="pick-icon">🌲</div>
+          <div class="pick-text">
+            <div class="pick-name"><a href="${url}" target="_blank">${code} State Parks</a></div>
+            <div class="pick-meta">Official ${code} state parks site</div>
+          </div>
+        </div>`;
+      }
+    });
+
+    if (redditStateParkPosts?.length) {
+      html += `<div class="day-section"><div class="day-section-label">Recent Reddit Discussions</div>`;
+      redditStateParkPosts.forEach(t => {
+        html += `<div class="reddit-quote">
+          <div style="font-weight:600;font-style:normal;margin-bottom:4px;">${esc(t.title)}</div>
+          ${t.snippet ? esc(t.snippet) + '…' : ''}
+          <span class="meta">r/StateParks · ${t.score} upvotes · <a href="${esc(t.url)}" target="_blank" rel="noopener" style="color:var(--rust);">read on reddit</a></span>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+
+  document.getElementById('results').innerHTML = html;
+}
+
+renderStops();
+document.getElementById('planBtn').addEventListener('click', planTrip);
+document.getElementById('inspireBtn').addEventListener('click', inspireMe);
+document.querySelector('.sidebar').addEventListener('scroll', closeSuggestions);
+window.addEventListener('resize', closeSuggestions);
+
+// Curated regional hub cities for Grand Loop generation. All hand-picked to be
+// (a) major routable cities, (b) interesting destinations, (c) spread evenly
+// around the continental US so a loop through 4-6 of them = a real perimeter trip.
+const GRAND_LOOP_HUBS = [
+  { name: 'Bar Harbor, Maine', coord: [44.39, -68.20], region: 'NE' },
+  { name: 'Burlington, Vermont', coord: [44.48, -73.21], region: 'NE' },
+  { name: 'Niagara Falls, New York', coord: [43.10, -79.04], region: 'NE' },
+  { name: 'Mackinaw City, Michigan', coord: [45.78, -84.73], region: 'GL' },
+  { name: 'Duluth, Minnesota', coord: [46.79, -92.10], region: 'GL' },
+  { name: 'Theodore Roosevelt NP, North Dakota', coord: [46.97, -103.45], region: 'GP' },
+  { name: 'Glacier National Park, Montana', coord: [48.76, -113.79], region: 'NW' },
+  { name: 'Spokane, Washington', coord: [47.66, -117.43], region: 'NW' },
+  { name: 'Olympic National Park, Washington', coord: [47.80, -123.60], region: 'NW' },
+  { name: 'Crater Lake, Oregon', coord: [42.94, -122.11], region: 'NW' },
+  { name: 'Redwood NP, California', coord: [41.21, -124.00], region: 'W' },
+  { name: 'San Francisco, California', coord: [37.77, -122.42], region: 'W' },
+  { name: 'Big Sur, California', coord: [36.27, -121.81], region: 'W' },
+  { name: 'Joshua Tree, California', coord: [33.87, -115.90], region: 'SW' },
+  { name: 'Grand Canyon, Arizona', coord: [36.06, -112.14], region: 'SW' },
+  { name: 'Moab, Utah', coord: [38.57, -109.55], region: 'SW' },
+  { name: 'Santa Fe, New Mexico', coord: [35.69, -105.94], region: 'SW' },
+  { name: 'Marfa, Texas', coord: [30.31, -104.02], region: 'S' },
+  { name: 'San Antonio, Texas', coord: [29.42, -98.49], region: 'S' },
+  { name: 'New Orleans, Louisiana', coord: [29.95, -90.07], region: 'S' },
+  { name: 'Memphis, Tennessee', coord: [35.15, -90.05], region: 'S' },
+  { name: 'Nashville, Tennessee', coord: [36.16, -86.78], region: 'S' },
+  { name: 'Asheville, North Carolina', coord: [35.60, -82.55], region: 'SE' },
+  { name: 'Savannah, Georgia', coord: [32.08, -81.09], region: 'SE' },
+  { name: 'Charleston, South Carolina', coord: [32.78, -79.93], region: 'SE' },
+  { name: 'Outer Banks, North Carolina', coord: [35.56, -75.47], region: 'SE' },
+  { name: 'Shenandoah NP, Virginia', coord: [38.53, -78.35], region: 'MA' },
+  { name: 'Pittsburgh, Pennsylvania', coord: [40.44, -79.99], region: 'MA' },
+  { name: 'Black Hills, South Dakota', coord: [43.88, -103.46], region: 'GP' },
+  { name: 'Rocky Mountain NP, Colorado', coord: [40.34, -105.69], region: 'RM' },
+  { name: 'Yellowstone NP, Wyoming', coord: [44.43, -110.59], region: 'RM' },
+  { name: 'Grand Teton NP, Wyoming', coord: [43.79, -110.68], region: 'RM' },
+  { name: 'Telluride, Colorado', coord: [37.94, -107.81], region: 'RM' }
+];
+
+// Pick anchors for a grand loop: rotate around the start, picking the closest hub
+// in each cardinal/intercardinal direction. Result: a real perimeter polygon.
+function pickGrandLoopAnchors(start, finalDest, sameStartEnd) {
+  // Rough bearing from start to each hub; bucket into 6 sectors (N, NE, E, SE, SW, NW)
+  // and pick the most distant hub in each sector for max coverage.
+  const sectors = { N: [], NE: [], E: [], SE: [], S: [], SW: [], W: [], NW: [] };
+
+  GRAND_LOOP_HUBS.forEach(h => {
+    const dLat = h.coord[0] - start[0];
+    const dLon = h.coord[1] - start[1];
+    const dist = Math.hypot(dLat, dLon);
+    if (dist < 3) return; // too close, would be redundant
+    // Angle in degrees, 0 = east, 90 = north
+    let angle = Math.atan2(dLat, dLon) * 180 / Math.PI;
+    if (angle < 0) angle += 360;
+    let sector;
+    if (angle < 22.5 || angle >= 337.5) sector = 'E';
+    else if (angle < 67.5) sector = 'NE';
+    else if (angle < 112.5) sector = 'N';
+    else if (angle < 157.5) sector = 'NW';
+    else if (angle < 202.5) sector = 'W';
+    else if (angle < 247.5) sector = 'SW';
+    else if (angle < 292.5) sector = 'S';
+    else sector = 'SE';
+    sectors[sector].push({ ...h, _dist: dist, _angle: angle });
+  });
+
+  // Pick one hub per non-empty sector (the one farthest from start in that sector)
+  const picks = [];
+  Object.values(sectors).forEach(group => {
+    if (group.length === 0) return;
+    group.sort((a, b) => b._dist - a._dist);
+    picks.push(group[0]);
+  });
+
+  // Sort picks by angle so we visit them in rotational order (counter-clockwise)
+  picks.sort((a, b) => a._angle - b._angle);
+
+  // Cap at 6 anchors max for practical trip length
+  return picks.slice(0, 6);
+}
+// Curated list of inspiring US road-trip destinations.
+// Picked for scenic value: national parks, historic towns, dramatic landscapes.
+const INSPIRE_DESTINATIONS = [
+  { name: 'Marfa, Texas', coord: [30.3119, -104.0214], blurb: 'Desert art town with mysterious lights' },
+  { name: 'Taos, New Mexico', coord: [36.4072, -105.5734], blurb: 'Adobe pueblos & Sangre de Cristo views' },
+  { name: 'Moab, Utah', coord: [38.5733, -109.5498], blurb: 'Red rock between Arches & Canyonlands' },
+  { name: 'Asheville, North Carolina', coord: [35.5951, -82.5515], blurb: 'Blue Ridge Parkway gateway' },
+  { name: 'Sedona, Arizona', coord: [34.8697, -111.7610], blurb: 'Red rock vortex country' },
+  { name: 'Bar Harbor, Maine', coord: [44.3876, -68.2039], blurb: 'Acadia National Park doorstep' },
+  { name: 'Bisbee, Arizona', coord: [31.4481, -109.9281], blurb: 'Old mining town, twisty mountain roads' },
+  { name: 'Telluride, Colorado', coord: [37.9375, -107.8123], blurb: 'Box canyon ski town in summer' },
+  { name: 'Savannah, Georgia', coord: [32.0809, -81.0912], blurb: 'Spanish moss & antebellum squares' },
+  { name: 'Charleston, South Carolina', coord: [32.7765, -79.9311], blurb: 'Lowcountry charm & coastal cuisine' },
+  { name: 'New Orleans, Louisiana', coord: [29.9511, -90.0715], blurb: 'Music, food, and bayou' },
+  { name: 'Nashville, Tennessee', coord: [36.1627, -86.7816], blurb: 'Music city, Smoky Mountain access' },
+  { name: 'Mackinac Island, Michigan', coord: [45.8492, -84.6189], blurb: 'No cars allowed; bikes & ferries only' },
+  { name: 'Glacier National Park, Montana', coord: [48.7596, -113.7870], blurb: 'Going-to-the-Sun Road' },
+  { name: 'Olympic National Park, Washington', coord: [47.8021, -123.6044], blurb: 'Rainforest meets coast' },
+  { name: 'Crater Lake, Oregon', coord: [42.9446, -122.1090], blurb: 'Deepest lake in the US, impossibly blue' },
+  { name: 'Big Sur, California', coord: [36.2704, -121.8081], blurb: 'Pacific Coast Highway at its finest' },
+  { name: 'Joshua Tree, California', coord: [33.8734, -115.9010], blurb: 'Surreal desert sunsets' },
+  { name: 'Black Hills, South Dakota', coord: [43.8791, -103.4591], blurb: 'Mt Rushmore, Badlands, Custer SP' },
+  { name: 'Door County, Wisconsin', coord: [45.0911, -87.1923], blurb: 'Scandinavian coastal villages' },
+  { name: 'Outer Banks, North Carolina', coord: [35.5582, -75.4665], blurb: 'Wild horses & windswept dunes' },
+  { name: 'Park City, Utah', coord: [40.6461, -111.4980], blurb: 'Wasatch Range charm' },
+  { name: 'Santa Fe, New Mexico', coord: [35.6870, -105.9378], blurb: 'High desert art and history' },
+  { name: 'Hot Springs, Arkansas', coord: [34.5037, -93.0552], blurb: 'Bathhouse row & Ouachita forests' },
+  { name: 'Eureka Springs, Arkansas', coord: [36.4015, -93.7377], blurb: 'Victorian Ozarks mountain town' }
+];
+
+async function inspireMe() {
+  const errBox = document.getElementById('errorBox');
+  errBox.innerHTML = '';
+
+  // Need a start location
+  const start = state.stops[0];
+  if (!start.coord) {
+    errBox.innerHTML = `<div class="error">Set a starting point first — then I'll surprise you with a destination</div>`;
+    return;
+  }
+
+  // Filter destinations by reasonable driving distance from start (rough mile estimate)
+  const maxMiles = 1500; // generous; we'll rank by distance and pick from closer half
+  const candidates = INSPIRE_DESTINATIONS
+    .map(d => ({ ...d, _miles: distMiles(start.coord, d.coord) }))
+    .filter(d => d._miles > 100 && d._miles < maxMiles) // not too close, not too far
+    .sort((a, b) => a._miles - b._miles);
+
+  if (!candidates.length) {
+    errBox.innerHTML = `<div class="error">Couldn't find an inspiring destination from your starting point. Try a US start location.</div>`;
+    return;
+  }
+
+  // Pick randomly from the closer two-thirds (avoids extreme cross-country picks)
+  const pool = candidates.slice(0, Math.max(5, Math.floor(candidates.length * 0.66)));
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+
+  // Set the destination and trigger plan
+  // Find or create the second stop slot
+  state.stops = [
+    state.stops[0],
+    { id: state.nextId++, name: pick.name, coord: pick.coord, state: pick.name.split(',').pop().trim() }
+  ];
+  renderStops();
+  drawStopMarkers();
+
+  // Show a quick toast about what was picked
+  errBox.innerHTML = `<div style="background:var(--paper);border:1.5px solid var(--ink);border-left:4px solid var(--sun);padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.5;">
+    <strong style="font-family:'Abril Fatface',serif;font-size:18px;color:var(--rust);">${esc(pick.name)}</strong><br/>
+    <span style="font-style:italic;">${esc(pick.blurb)}</span><br/>
+    <span style="font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.14em;opacity:0.7;">~${pick._miles.toFixed(0)} miles · charting your route…</span>
+  </div>`;
+
+  // Auto-trigger plan
+  await planTrip();
+}
+</script>
+</body>
+</html>
