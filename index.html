@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- Wayfinder v0.7.2 — ORS snap validation for loop candidates -->
+<!-- Wayfinder v0.9.0 — hard pushback on infeasible plans, food/lodging map-only -->
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -262,6 +262,70 @@
   .pick-link.reddit:hover { background: var(--rust); color: var(--cream); }
   .pick-link.tripadv { border-color: var(--moss); color: var(--moss); }
   .pick-link.tripadv:hover { background: var(--moss); color: var(--cream); }
+
+  .pick-badges {
+    display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px;
+  }
+  .badge-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 2px 6px;
+    background: rgba(74, 93, 58, 0.12);
+    border: 1px solid rgba(74, 93, 58, 0.4);
+    color: var(--moss);
+    border-radius: 2px;
+  }
+
+  .wiki-block {
+    margin-top: 6px;
+    padding: 8px 10px;
+    background: rgba(91, 122, 140, 0.08);
+    border-left: 3px solid var(--sky);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .wiki-block a {
+    color: var(--sky);
+    text-decoration: none;
+    border-bottom: 1px dotted var(--sky);
+    font-weight: 600;
+  }
+  .wiki-block .wiki-meta {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    opacity: 0.6;
+    display: block;
+    margin-top: 4px;
+  }
+
+  .wiki-nearby-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 6px;
+  }
+  .wiki-nearby-item {
+    display: block;
+    padding: 4px 8px;
+    background: rgba(91, 122, 140, 0.06);
+    border-left: 2px solid var(--sky);
+    font-size: 12px;
+    text-decoration: none;
+    color: var(--ink);
+    transition: background 0.1s;
+  }
+  .wiki-nearby-item:hover { background: rgba(91, 122, 140, 0.18); }
+  .wiki-nearby-item .dist {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    opacity: 0.6;
+    margin-left: 4px;
+    letter-spacing: 0.1em;
+  }
   .day-section {
     margin-top: 14px; padding-top: 10px; border-top: 2px solid var(--ink);
   }
@@ -462,6 +526,8 @@
       <label class="check-pill on"><input type="checkbox" value="food" checked />Local Eats</label>
       <label class="check-pill on"><input type="checkbox" value="lodging" checked />Lodging</label>
       <label class="check-pill"><input type="checkbox" value="historic" />Historic Sites</label>
+      <label class="check-pill"><input type="checkbox" value="brewery" />Breweries</label>
+      <label class="check-pill on"><input type="checkbox" value="wikipedia" checked />Wikipedia Context</label>
       <label class="check-pill on"><input type="checkbox" value="reddit" checked />Reddit Tips</label>
     </div>
 
@@ -1242,6 +1308,134 @@ async function fetchFoursquare(routeGeometry, interests) {
   return { food: dedupe(food), lodge: dedupe(lodge) };
 }
 
+/* ============ WIKIPEDIA SUMMARIES ============ */
+// Fetch a short Wikipedia summary for a place name. Uses the REST API which is
+// CORS-friendly and needs no key. Returns { extract, url, thumbnail } or null.
+const _wikiCache = new Map();
+async function fetchWikipediaSummary(placeName) {
+  if (!placeName) return null;
+  // Normalize: strip parenthetical suffixes like " (loop)" or " (return)"
+  const clean = placeName.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (_wikiCache.has(clean)) return _wikiCache.get(clean);
+
+  try {
+    const url = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(clean)}?redirect=true`;
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) { _wikiCache.set(clean, null); return null; }
+    const data = await res.json();
+    // Skip disambiguation pages and missing entries
+    if (data.type === 'disambiguation' || data.type === 'no-extract') {
+      _wikiCache.set(clean, null);
+      return null;
+    }
+    const result = {
+      extract: data.extract || '',
+      url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(clean)}`,
+      thumbnail: data.thumbnail?.source || null,
+      title: data.title || clean
+    };
+    _wikiCache.set(clean, result);
+    return result;
+  } catch (e) {
+    _wikiCache.set(clean, null);
+    return null;
+  }
+}
+
+/* ============ WIKIPEDIA GEOSEARCH ============ */
+// Find Wikipedia articles within a radius of a coordinate. Surfaces offbeat
+// nearby cultural/historical/geographical points the major sources miss.
+async function fetchWikipediaNearby(coord, radiusMeters = 10000, limit = 5) {
+  try {
+    const url = `https://en.wikipedia.org/w/api.php?action=query&list=geosearch&gscoord=${coord[0]}|${coord[1]}&gsradius=${radiusMeters}&gslimit=${limit}&format=json&origin=*`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return (data.query?.geosearch || []).map(g => ({
+      name: g.title,
+      lat: g.lat,
+      lon: g.lon,
+      dist: g.dist, // meters from query point
+      pageId: g.pageid,
+      url: `https://en.wikipedia.org/wiki/${encodeURIComponent(g.title.replace(/ /g, '_'))}`
+    }));
+  } catch (e) { return []; }
+}
+
+// Sample a few points along the route and collect nearby Wikipedia articles
+async function fetchWikiAlongRoute(routeGeometry) {
+  const coords = routeGeometry.coordinates;
+  if (!coords.length) return [];
+  const samples = [];
+  const sampleCount = Math.min(5, Math.max(2, Math.floor(coords.length / 100)));
+  for (let i = 1; i <= sampleCount; i++) {
+    const idx = Math.floor((coords.length / (sampleCount + 1)) * i);
+    samples.push(coords[idx]);
+  }
+  const all = [];
+  for (const sample of samples) {
+    // sample is [lon, lat] from GeoJSON
+    const articles = await fetchWikipediaNearby([sample[1], sample[0]], 15000, 6);
+    all.push(...articles);
+  }
+  // Dedupe by pageId
+  const seen = new Set();
+  return all.filter(a => {
+    if (seen.has(a.pageId)) return false;
+    seen.add(a.pageId);
+    return true;
+  });
+}
+
+/* ============ OPEN BREWERY DB ============ */
+// Free, no key, CORS-friendly. ~8,000 US craft breweries — all independents
+// by definition (no chain breweries qualify for the database).
+async function fetchBreweries(routeGeometry) {
+  const coords = routeGeometry.coordinates;
+  if (!coords.length) return [];
+  const samples = [];
+  const sampleCount = Math.min(5, Math.max(2, Math.floor(coords.length / 100)));
+  for (let i = 1; i <= sampleCount; i++) {
+    const idx = Math.floor((coords.length / (sampleCount + 1)) * i);
+    samples.push(coords[idx]);
+  }
+  const all = [];
+  for (const sample of samples) {
+    try {
+      // by_dist param uses lat,lon
+      const url = `https://api.openbrewerydb.org/v1/breweries?by_dist=${sample[1]},${sample[0]}&per_page=10`;
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const data = await res.json();
+      data.forEach(b => {
+        if (!b.latitude || !b.longitude) return;
+        // Skip "closed" breweries
+        if (b.brewery_type === 'closed') return;
+        all.push({
+          name: b.name,
+          lat: parseFloat(b.latitude),
+          lon: parseFloat(b.longitude),
+          type: b.brewery_type,
+          city: b.city,
+          state: b.state_province,
+          street: b.street,
+          phone: b.phone,
+          website: b.website_url,
+          source: 'brewery'
+        });
+      });
+    } catch (e) { /* */ }
+  }
+  // Dedupe by name+city
+  const seen = new Set();
+  return all.filter(b => {
+    const k = `${b.name}|${b.city}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 async function fetchPOIsAlongRoute(routeGeometry, interests) {
   const coords = routeGeometry.coordinates;
   if (!coords.length) return [];
@@ -1298,6 +1492,27 @@ function isChain(name) {
 function isLodgingChain(name) {
   if (!name) return false;
   return LODGING_CHAIN_PATTERNS.test(name);
+}
+
+// Extract user-facing attribute tags from an OSM element.
+// Returns array of short badge strings like 'outdoor seating', 'vegetarian', 'dog-friendly'.
+function extractOSMBadges(tags) {
+  const badges = [];
+  if (!tags) return badges;
+  if (tags.outdoor_seating === 'yes') badges.push('outdoor seating');
+  if (tags['diet:vegetarian'] === 'yes' || tags.cuisine?.includes('vegetarian')) badges.push('vegetarian');
+  if (tags['diet:vegan'] === 'yes' || tags.cuisine?.includes('vegan')) badges.push('vegan');
+  if (tags['diet:gluten_free'] === 'yes') badges.push('gluten-free');
+  if (tags.dog === 'yes') badges.push('dog-friendly');
+  if (tags.wheelchair === 'yes') badges.push('accessible');
+  if (tags.takeaway === 'yes') badges.push('takeout');
+  if (tags.delivery === 'yes') badges.push('delivery');
+  if (tags.drive_through === 'yes') badges.push('drive-thru');
+  if (tags.smoking === 'no') badges.push('non-smoking');
+  if (tags.wifi === 'yes' || tags.internet_access === 'wlan' || tags.internet_access === 'yes') badges.push('wifi');
+  if (tags.organic === 'yes' || tags.organic === 'only') badges.push('organic');
+  if (tags['payment:bitcoin'] === 'yes') badges.push('₿');
+  return badges;
 }
 
 function classifyOSM(el) {
@@ -1671,13 +1886,15 @@ async function planTrip() {
     setLoading('Querying archives', 'NPS, Recreation.gov, Reddit, OpenStreetMap');
     const stateCodes = await statesAlongRoute(validStops, route.geometry);
 
-    const [npsParks, recGov, redditByStop, redditStatePark, osmPois, fsqData] = await Promise.all([
+    const [npsParks, recGov, redditByStop, redditStatePark, osmPois, fsqData, breweries, wikiNearby] = await Promise.all([
       interests.includes('national_park') ? fetchNPSParks(stateCodes) : Promise.resolve([]),
       interests.includes('campground') ? fetchRecGovCampgrounds(route.geometry) : Promise.resolve([]),
       interests.includes('reddit') ? fetchRedditTips(validStops) : Promise.resolve({}),
       interests.includes('reddit') && interests.includes('state_park') ? fetchRedditStateParks(stateCodes) : Promise.resolve([]),
       fetchPOIsAlongRoute(route.geometry, interests),
-      fetchFoursquare(route.geometry, interests)
+      fetchFoursquare(route.geometry, interests),
+      interests.includes('brewery') ? fetchBreweries(route.geometry) : Promise.resolve([]),
+      interests.includes('wikipedia') ? fetchWikiAlongRoute(route.geometry) : Promise.resolve([])
     ]);
 
     setLoading('Curating stops', 'Filtering by route proximity');
@@ -1701,18 +1918,21 @@ async function planTrip() {
     setLoading('Naming overnight stops', 'Reverse-geocoding waypoints');
     await nameOvernightStops(dayPlan);
 
-    while (dayPlan.length > days) {
-      let minIdx = 0;
-      for (let i = 1; i < dayPlan.length; i++) {
-        if (dayPlan[i].hours < dayPlan[minIdx].hours) minIdx = i;
-      }
-      const mergeWith = minIdx < dayPlan.length - 1 ? minIdx + 1 : minIdx - 1;
-      const a = Math.min(minIdx, mergeWith);
-      const b = Math.max(minIdx, mergeWith);
-      dayPlan[a].stops = dayPlan[a].stops.concat(dayPlan[b].stops.slice(1));
-      dayPlan[a].hours += dayPlan[b].hours;
-      dayPlan[a].miles += dayPlan[b].miles;
-      dayPlan.splice(b, 1);
+    // HARD PUSHBACK: if the user-requested day budget can't accommodate the
+    // route at the chosen pace, refuse the plan and tell them what fits.
+    const totalDriveHours = route.duration / 3600;
+    const minDaysNeeded = Math.ceil(totalDriveHours / hoursPerDay);
+    if (dayPlan.length > days) {
+      // Calculate what the user's options actually are
+      const minHoursPerDayForRequested = Math.ceil(totalDriveHours / days * 10) / 10;
+      const totalMiles = (route.distance / 1609.34).toFixed(0);
+
+      throw new Error(
+        `This trip needs ${minDaysNeeded} days at ${hoursPerDay} hrs/day — but you've set ${days} days. ` +
+        `The route is ${totalMiles} mi (${totalDriveHours.toFixed(1)} hrs of driving). To fit it in ${days} days, ` +
+        `you'd need to drive ${minHoursPerDayForRequested} hrs/day. ` +
+        `Either bump days to ${minDaysNeeded}+, raise hours/day, or pick a closer destination.`
+      );
     }
 
     dayPlan.forEach(day => {
@@ -1745,7 +1965,14 @@ async function planTrip() {
           if (!lat || !lon || !el.tags?.name) return null;
           const c = classifyOSM(el);
           if (!c) return null; // chain filter returns null
-          return { source: 'osm', name: el.tags.name, lat, lon, classified: c, _d: distToDay(lat, lon) };
+          return {
+            source: 'osm',
+            name: el.tags.name,
+            lat, lon,
+            classified: c,
+            badges: extractOSMBadges(el.tags),
+            _d: distToDay(lat, lon)
+          };
         })
         .filter(Boolean)
         .filter(p => p._d < 40)
@@ -1762,7 +1989,23 @@ async function planTrip() {
         .filter(p => p._d < 40)
         .sort((a, b) => (b.rating || 0) - (a.rating || 0) || a._d - b._d);
 
-      const picks = { parks: npsForDay, camps: campsForDay, food: [], scenic: [], lodge: [], historic: [] };
+      const picks = { parks: npsForDay, camps: campsForDay, food: [], scenic: [], lodge: [], historic: [], breweries: [], wiki: [] };
+
+      // Breweries for this day (sorted by distance to day stops)
+      const brewsForDay = (breweries || [])
+        .map(b => ({ ...b, _d: distToDay(b.lat, b.lon) }))
+        .filter(b => b._d < 40)
+        .sort((a, b) => a._d - b._d)
+        .slice(0, 3);
+      picks.breweries = brewsForDay;
+
+      // Wikipedia nearby articles for this day
+      const wikiForDay = (wikiNearby || [])
+        .map(w => ({ ...w, _d: distToDay(w.lat, w.lon) }))
+        .filter(w => w._d < 30)
+        .sort((a, b) => a._d - b._d)
+        .slice(0, 4);
+      picks.wiki = wikiForDay;
 
       // Prefer Foursquare for food when available (better data, already chain-free)
       if (fsqFoodForDay.length) {
@@ -1804,6 +2047,38 @@ async function planTrip() {
       day.picks = picks;
     });
 
+    // Wikipedia enrichment: fetch a summary for each named NPS park and each
+    // unique day-stop city. Done after picking so we don't fetch unused entries.
+    if (interests.includes('wikipedia')) {
+      setLoading('Adding Wikipedia context', 'Fetching summaries');
+      const wikiTargets = new Set();
+      dayPlan.forEach(d => {
+        d.picks.parks.forEach(p => wikiTargets.add(p.name));
+        d.picks.scenic.forEach(p => wikiTargets.add(p.name));
+        d.stops.forEach(s => {
+          if (s.name) wikiTargets.add(s.name.split(',')[0].trim());
+        });
+      });
+      const summaryMap = {};
+      // Run with limited concurrency (Wikipedia is fast but be polite)
+      const targets = [...wikiTargets].slice(0, 30);
+      await Promise.all(targets.map(async name => {
+        const summary = await fetchWikipediaSummary(name);
+        if (summary) summaryMap[name] = summary;
+      }));
+      // Attach summaries to picks
+      dayPlan.forEach(d => {
+        d.picks.parks.forEach(p => { if (summaryMap[p.name]) p.wiki = summaryMap[p.name]; });
+        d.picks.scenic.forEach(p => { if (summaryMap[p.name]) p.wiki = summaryMap[p.name]; });
+        d.stopWikis = d.stops
+          .map(s => {
+            const k = s.name?.split(',')[0].trim();
+            return k && summaryMap[k] ? { stop: k, ...summaryMap[k] } : null;
+          })
+          .filter(Boolean);
+      });
+    }
+
     const placedKeys = new Set();
     const placeMarker = (lat, lon, emoji, color, popupHTML) => {
       const k = `${lat.toFixed(3)},${lon.toFixed(3)}`;
@@ -1814,6 +2089,18 @@ async function planTrip() {
         .addTo(state.poiLayer);
     };
 
+    // Build rich popup HTML for food/lodge picks (these no longer appear in
+    // the sidebar — the map IS the discovery interface for these categories)
+    const richFoodPopup = (p) => {
+      const rating = p.rating ? `<span style="background:#4a5d3a;color:#f4ead5;padding:1px 6px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;margin-left:4px;">${p.rating.toFixed(1)}</span>` : '';
+      const price = p.price ? `<span style="opacity:0.6;margin-left:4px;">${'$'.repeat(p.price)}</span>` : '';
+      const badges = p.badges?.length ? `<div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:6px;">${p.badges.map(b => `<span style="font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.1em;padding:2px 5px;background:rgba(74,93,58,0.12);border:1px solid rgba(74,93,58,0.4);color:#4a5d3a;">${esc(b)}</span>`).join('')}</div>` : '';
+      const addr = p.address ? `<div style="font-size:12px;margin-top:4px;opacity:0.85;">${esc(p.address)}</div>` : '';
+      const reddit = `<a href="${redditSearchURL(p.name)}" target="_blank" rel="noopener" style="font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.14em;padding:3px 8px;border:1px solid #b34727;background:transparent;color:#b34727;text-decoration:none;margin-right:4px;">Reddit</a>`;
+      const tripadv = `<a href="${tripAdvisorSearchURL(p.name)}" target="_blank" rel="noopener" style="font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.14em;padding:3px 8px;border:1px solid #4a5d3a;background:transparent;color:#4a5d3a;text-decoration:none;">TripAdvisor</a>`;
+      return `<b>${esc(p.name)}</b>${rating}${price}<br/><span style="font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.1em;opacity:0.7;">${esc(p.classified.label)}${p.source === 'fsq' ? ' · foursquare' : ''}</span>${addr}${badges}<div style="margin-top:8px;">${reddit}${tripadv}</div>`;
+    };
+
     dayPlan.forEach(d => {
       d.picks.parks.forEach(p => placeMarker(p.lat, p.lon, '🏞', '#4a5d3a',
         `<b>${esc(p.name)}</b><br/>${esc(p.designation)}<br/><a href="${esc(p.url)}" target="_blank" rel="noopener">NPS Site →</a>`));
@@ -1821,12 +2108,14 @@ async function planTrip() {
         `<b>${esc(c.name)}</b><br/>Campground<br/><a href="${esc(c.url)}" target="_blank" rel="noopener">Reserve →</a>`));
       d.picks.scenic.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
         `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
-      d.picks.food.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
-        `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
-      d.picks.lodge.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
-        `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
+      d.picks.food.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color, richFoodPopup(p)));
+      d.picks.lodge.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color, richFoodPopup(p)));
       d.picks.historic.forEach(p => placeMarker(p.lat, p.lon, p.classified.icon, p.classified.color,
         `<b>${esc(p.name)}</b><br/>${esc(p.classified.label)}`));
+      d.picks.breweries?.forEach(b => placeMarker(b.lat, b.lon, '🍺', '#8a3319',
+        `<b>${esc(b.name)}</b><br/>${esc(b.type || 'Brewery')}<br/>${b.website ? `<a href="${esc(b.website)}" target="_blank" rel="noopener">Website →</a>` : ''}`));
+      d.picks.wiki?.forEach(w => placeMarker(w.lat, w.lon, 'W', '#5b7a8c',
+        `<b>${esc(w.name)}</b><br/><a href="${esc(w.url)}" target="_blank" rel="noopener">Read on Wikipedia →</a>`));
     });
 
     setLoading('Rendering', 'Almost there');
@@ -1841,7 +2130,10 @@ async function planTrip() {
 
   } catch (err) {
     console.error(err);
-    errBox.innerHTML = `<div class="error">${err.message || 'Something went sideways. Try again.'}</div>`;
+    errBox.innerHTML = `<div class="error" style="text-transform:none;letter-spacing:0.02em;font-size:13px;line-height:1.55;font-family:'Fraunces',serif;">
+      <strong style="font-family:'DM Mono',monospace;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;display:block;margin-bottom:6px;">Trip won't fit</strong>
+      ${esc(err.message || 'Something went sideways. Try again.')}
+    </div>`;
   } finally {
     document.getElementById('loading').classList.remove('show');
     document.getElementById('planBtn').disabled = false;
@@ -1865,6 +2157,8 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
   sources.push(KEYS.nps ? 'NPS ✓' : 'NPS — add key');
   sources.push(KEYS.ridb ? 'Rec.gov ✓' : 'Rec.gov — add key');
   sources.push(KEYS.fsq ? 'Foursquare ✓' : 'Foursquare — add key');
+  sources.push('Wikipedia ✓');
+  sources.push('OpenBreweryDB ✓');
   sources.push(window._wfRedditBlocked ? 'Reddit — blocked by browser' : 'Reddit ✓');
   sources.push('OSM (chain-filtered) ✓');
   html += `<div style="font-family:'DM Mono',monospace;font-size:9px;text-transform:uppercase;letter-spacing:0.18em;opacity:0.6;margin-bottom:18px;">
@@ -1887,6 +2181,7 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
       day.picks.parks.forEach(p => {
         const desc = p.description ? esc(p.description.slice(0, 180)) + (p.description.length > 180 ? '…' : '') : '';
         const acts = p.activities?.length ? esc(p.activities.join(', ')) : '';
+        const wikiLink = p.wiki ? `<a class="pick-link" href="${esc(p.wiki.url)}" target="_blank" rel="noopener" style="border-color:var(--sky);color:var(--sky);">Wikipedia</a>` : '';
         body += `<div class="pick">
           <div class="pick-icon">🏞</div>
           <div class="pick-text">
@@ -1896,6 +2191,7 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
             ${acts ? `<div class="pick-detail" style="opacity:0.7;font-size:12px;">${acts}</div>` : ''}
             <div class="pick-links">
               <a class="pick-link" href="${esc(p.url)}" target="_blank" rel="noopener">NPS.gov</a>
+              ${wikiLink}
               <a class="pick-link reddit" href="${redditSearchURL(p.name)}" target="_blank" rel="noopener">Reddit</a>
               <a class="pick-link tripadv" href="${tripAdvisorSearchURL(p.name)}" target="_blank" rel="noopener">TripAdvisor</a>
             </div>
@@ -1925,25 +2221,78 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
       body += `</div>`;
     }
 
-    const others = [...day.picks.scenic, ...day.picks.food, ...day.picks.lodge, ...day.picks.historic];
+    const others = [...day.picks.scenic, ...day.picks.historic];
     if (others.length) {
-      body += `<div class="day-section"><div class="day-section-label">Along the Way</div>`;
+      body += `<div class="day-section"><div class="day-section-label">Scenic &amp; Historic</div>`;
       others.forEach(p => {
-        const rating = p.rating ? `<span style="background:var(--moss);color:var(--cream);padding:1px 6px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.06em;margin-left:6px;">${p.rating.toFixed(1)}</span>` : '';
-        const price = p.price ? '<span style="opacity:0.6;margin-left:4px;">' + '$'.repeat(p.price) + '</span>' : '';
-        const addr = p.address ? `<div class="pick-detail" style="font-size:12px;">${esc(p.address)}</div>` : '';
+        const wikiInline = p.wiki
+          ? `<div class="wiki-block">${esc(p.wiki.extract.slice(0, 200))}${p.wiki.extract.length > 200 ? '…' : ''}<span class="wiki-meta"><a href="${esc(p.wiki.url)}" target="_blank" rel="noopener">read on wikipedia →</a></span></div>` : '';
         body += `<div class="pick">
           <div class="pick-icon">${p.classified.icon}</div>
           <div class="pick-text">
-            <div class="pick-name">${esc(p.name)}${rating}${price}</div>
-            <div class="pick-meta">${esc(p.classified.label)}${p._d ? ' · ' + p._d.toFixed(0) + ' mi off route' : ''}${p.source === 'fsq' ? ' · foursquare' : ''}</div>
-            ${addr}
+            <div class="pick-name">${esc(p.name)}</div>
+            <div class="pick-meta">${esc(p.classified.label)}${p._d ? ' · ' + p._d.toFixed(0) + ' mi off route' : ''}</div>
+            ${wikiInline}
             <div class="pick-links">
               <a class="pick-link reddit" href="${redditSearchURL(p.name)}" target="_blank" rel="noopener">Reddit</a>
               <a class="pick-link tripadv" href="${tripAdvisorSearchURL(p.name)}" target="_blank" rel="noopener">TripAdvisor</a>
             </div>
           </div>
         </div>`;
+      });
+      body += `</div>`;
+    }
+
+    // Hint about food/lodging map markers (only if we have any for this day)
+    const foodLodgeCount = (day.picks.food?.length || 0) + (day.picks.lodge?.length || 0);
+    if (foodLodgeCount > 0) {
+      body += `<div class="day-section"><div class="day-section-label">Eats &amp; Stays</div>
+        <div style="font-size:13px;line-height:1.5;padding:6px 0;">
+          <span style="font-family:'DM Mono',monospace;font-size:18px;color:var(--rust);">→</span>
+          <strong>${foodLodgeCount}</strong> food &amp; lodging picks for this day are on the map.
+          <span style="opacity:0.7;font-style:italic;">Click 🍴 and 🛏 markers for ratings, badges, and links.</span>
+        </div>
+      </div>`;
+    }
+
+    // Breweries section
+    if (day.picks.breweries?.length) {
+      body += `<div class="day-section"><div class="day-section-label">Breweries</div>`;
+      day.picks.breweries.forEach(b => {
+        const typeLabel = b.type ? b.type.replace(/_/g, ' ') : 'brewery';
+        body += `<div class="pick">
+          <div class="pick-icon">🍺</div>
+          <div class="pick-text">
+            <div class="pick-name">${b.website ? `<a href="${esc(b.website)}" target="_blank" rel="noopener">${esc(b.name)}</a>` : esc(b.name)}</div>
+            <div class="pick-meta">${esc(typeLabel)} · ${esc(b.city || '')}, ${esc(b.state || '')}${b._d ? ' · ' + b._d.toFixed(0) + ' mi off route' : ''}</div>
+            ${b.street ? `<div class="pick-detail" style="font-size:12px;">${esc(b.street)}</div>` : ''}
+            <div class="pick-links">
+              ${b.website ? `<a class="pick-link" href="${esc(b.website)}" target="_blank" rel="noopener">Website</a>` : ''}
+              <a class="pick-link reddit" href="${redditSearchURL(b.name)}" target="_blank" rel="noopener">Reddit</a>
+            </div>
+          </div>
+        </div>`;
+      });
+      body += `</div>`;
+    }
+
+    // Wikipedia "Worth Knowing About" — nearby articles for offbeat discovery
+    if (day.picks.wiki?.length) {
+      body += `<div class="day-section"><div class="day-section-label">Worth Knowing About</div><div class="wiki-nearby-list">`;
+      day.picks.wiki.forEach(w => {
+        const distMi = (w.dist / 1609.34).toFixed(0);
+        body += `<a class="wiki-nearby-item" href="${esc(w.url)}" target="_blank" rel="noopener">
+          ${esc(w.name)}<span class="dist">${distMi} mi off route</span>
+        </a>`;
+      });
+      body += `</div></div>`;
+    }
+
+    // Wikipedia summaries for the day's stops (overnight cities, etc.)
+    if (day.stopWikis?.length) {
+      body += `<div class="day-section"><div class="day-section-label">About These Places</div>`;
+      day.stopWikis.forEach(w => {
+        body += `<div class="wiki-block"><strong style="font-style:normal;">${esc(w.title)}</strong><br/>${esc(w.extract.slice(0, 220))}${w.extract.length > 220 ? '…' : ''}<span class="wiki-meta"><a href="${esc(w.url)}" target="_blank" rel="noopener">read on wikipedia →</a></span></div>`;
       });
       body += `</div>`;
     }
@@ -1960,7 +2309,7 @@ function renderResults(route, dayPlan, stops, stateCodes, redditStateParkPosts) 
       body += `</div>`;
     }
 
-    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !day.redditTips?.length) {
+    if (!day.picks.parks.length && !day.picks.camps.length && !others.length && !foodLodgeCount && !day.picks.breweries?.length && !day.picks.wiki?.length && !day.stopWikis?.length && !day.redditTips?.length) {
       body += `<div style="font-style:italic;opacity:0.55;font-size:13px;padding:10px 0;">No specific picks for this stretch — try widening your interests, or add API keys for better park data.</div>`;
     }
 
@@ -2131,31 +2480,48 @@ async function inspireMe() {
   const errBox = document.getElementById('errorBox');
   errBox.innerHTML = '';
 
-  // Need a start location
   const start = state.stops[0];
   if (!start.coord) {
     errBox.innerHTML = `<div class="error">Set a starting point first — then I'll surprise you with a destination</div>`;
     return;
   }
 
-  // Filter destinations by reasonable driving distance from start (rough mile estimate)
-  const maxMiles = 1500; // generous; we'll rank by distance and pick from closer half
+  // Read user's actual day/hour budget so we don't suggest impossible trips
+  const days = parseInt(document.getElementById('days').value) || 5;
+  const hoursPerDay = parseInt(document.getElementById('hoursPerDay').value);
+  const isRoundTrip = document.getElementById('roundTrip').checked;
+
+  // Budget calculation: each day allows hoursPerDay of driving × ~55 mph average
+  // (highway+rest stops). Round trip needs to budget the return drive too.
+  const totalDriveBudgetHours = days * hoursPerDay;
+  const totalDriveBudgetMiles = totalDriveBudgetHours * 55;
+  // If round-trip, halve the one-way budget; also reserve ~20% for actual sightseeing
+  const oneWayBudget = isRoundTrip
+    ? (totalDriveBudgetMiles / 2) * 0.8
+    : totalDriveBudgetMiles * 0.8;
+
+  // Filter destinations that fit within the budget. Use straight-line distance ×
+  // 1.25 as a rough driving distance estimate.
   const candidates = INSPIRE_DESTINATIONS
-    .map(d => ({ ...d, _miles: distMiles(start.coord, d.coord) }))
-    .filter(d => d._miles > 100 && d._miles < maxMiles) // not too close, not too far
+    .map(d => ({ ...d, _miles: distMiles(start.coord, d.coord) * 1.25 }))
+    .filter(d => d._miles > 80) // not too close to be interesting
+    .filter(d => d._miles <= oneWayBudget)
     .sort((a, b) => a._miles - b._miles);
 
   if (!candidates.length) {
-    errBox.innerHTML = `<div class="error">Couldn't find an inspiring destination from your starting point. Try a US start location.</div>`;
+    const tripType = isRoundTrip ? 'round-trip' : 'one-way';
+    errBox.innerHTML = `<div class="error" style="text-transform:none;letter-spacing:0.02em;font-size:13px;line-height:1.55;font-family:'Fraunces',serif;">
+      <strong style="font-family:'DM Mono',monospace;letter-spacing:0.18em;text-transform:uppercase;font-size:11px;display:block;margin-bottom:6px;">No fit</strong>
+      With ${days} days at ${hoursPerDay} hrs/day (${tripType}), the realistic driving range is about ${Math.round(oneWayBudget)} mi from your start.
+      No curated destinations fit that budget. Try increasing days or hrs/day, or uncheck Round Trip for a one-way trip with twice the range.
+    </div>`;
     return;
   }
 
-  // Pick randomly from the closer two-thirds (avoids extreme cross-country picks)
-  const pool = candidates.slice(0, Math.max(5, Math.floor(candidates.length * 0.66)));
-  const pick = pool[Math.floor(Math.random() * pool.length)];
+  // Random pick from those that fit. Bias toward middle of the range so it
+  // doesn't always pick the closest one.
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
 
-  // Set the destination and trigger plan
-  // Find or create the second stop slot
   state.stops = [
     state.stops[0],
     { id: state.nextId++, name: pick.name, coord: pick.coord, state: pick.name.split(',').pop().trim() }
@@ -2163,14 +2529,12 @@ async function inspireMe() {
   renderStops();
   drawStopMarkers();
 
-  // Show a quick toast about what was picked
   errBox.innerHTML = `<div style="background:var(--paper);border:1.5px solid var(--ink);border-left:4px solid var(--sun);padding:10px 14px;margin-bottom:16px;font-size:13px;line-height:1.5;">
     <strong style="font-family:'Abril Fatface',serif;font-size:18px;color:var(--rust);">${esc(pick.name)}</strong><br/>
     <span style="font-style:italic;">${esc(pick.blurb)}</span><br/>
-    <span style="font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.14em;opacity:0.7;">~${pick._miles.toFixed(0)} miles · charting your route…</span>
+    <span style="font-family:'DM Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:0.14em;opacity:0.7;">~${pick._miles.toFixed(0)} mi · charting your route…</span>
   </div>`;
 
-  // Auto-trigger plan
   await planTrip();
 }
 </script>
